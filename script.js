@@ -59,9 +59,7 @@ function drawLoadingScreen() {
 
 // Menu screen variables
 let menuAnimationTime = 0;
-let nameInput = "";
-let nameInputElement = null;
-let nameInputContainer = null;
+let authenticatedUser = null;
 
 // Mobile thumbstick variables
 let isTouchDevice = false;
@@ -316,29 +314,23 @@ let accumulatedTime = 0;
 
 let menuAnimationId;
 
-function showNameInput() {
-  const container = document.getElementById('nameInputContainer');
-  const input = document.getElementById('nameInput');
-  if (!container || !input) return;
-  
-  nameInputContainer = container;
-  nameInputElement = input;
-  
-  container.style.display = 'block';
-  input.value = nameInput;
-  // Focus with a small delay to ensure mobile keyboards open properly
-  setTimeout(() => {
-    input.focus();
-  }, 100);
+function showAuthForm() {
+  // Authentication is handled by auth.js
+  if (window.gameAuth) {
+    window.gameAuth.showAuthForm();
+  }
 }
 
-function hideNameInput() {
-  const container = document.getElementById('nameInputContainer');
-  const input = document.getElementById('nameInput');
-  if (!container || !input) return;
-  
-  container.style.display = 'none';
-  nameInput = input.value.trim();
+function hideAuthForm() {
+  // Authentication is handled by auth.js
+  if (window.gameAuth) {
+    window.gameAuth.hideAuthForm();
+  }
+}
+
+// Check if user is authenticated
+function isUserAuthenticated() {
+  return window.gameAuth && window.gameAuth.isAuthenticated;
 }
 
 function initializeMultiplayer() {
@@ -347,8 +339,9 @@ function initializeMultiplayer() {
   socket.on('connect', () => {
     console.log('Connected to server');
     isConnected = true;
-    // Join the game with player name
-    socket.emit('playerJoin', { name: playerName });
+    
+    // Join the game - server will use authenticated user data from socket middleware
+    socket.emit('playerJoin', {});
   });
   
   socket.on('gameInit', (data) => {
@@ -448,9 +441,15 @@ function startGame() {
   // Prevent multiple start triggers
   if (currentGameState !== gameStates.MENU) return;
   
-  hideNameInput();
+  // Check if user is authenticated
+  if (!isUserAuthenticated()) {
+    showAuthForm();
+    return;
+  }
+  
+  hideAuthForm();
   currentGameState = gameStates.PLAYING;
-  playerName = nameInput || "Player";
+  authenticatedUser = window.gameAuth.getUser();
   if (menuAnimationId) {
     cancelAnimationFrame(menuAnimationId);
   }
@@ -721,8 +720,16 @@ function initGame() {
   currentGameState = gameStates.MENU;
   updateThumbstickPosition(); // Initialize responsive thumbstick sizing
   initializeInputEvents(); // Set up input event listeners
-  showNameInput(); // Show the HTML input overlay
-  animateMenu();
+  
+  // Check if user is already authenticated
+  if (isUserAuthenticated()) {
+    // User is logged in, go straight to game
+    startGame();
+  } else {
+    // Show authentication form
+    showAuthForm();
+    animateMenu();
+  }
 }
 
 loadImages(loadingImages).then(() => {

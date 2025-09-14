@@ -34,38 +34,134 @@
           left: 0;
       }
       
-      #nameInputContainer {
+      .auth-container {
           position: absolute;
           top: 50%;
           left: 50%;
           transform: translate(-50%, -50%);
           z-index: 10;
-          margin-top: 20px;
+          background: rgba(0, 20, 40, 0.95);
+          border-radius: 15px;
+          padding: 30px;
+          border: 2px solid rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(10px);
+          width: 400px;
+          max-width: 90vw;
       }
       
-      #nameInput {
-          width: 400px;
-          max-width: 80vw;
-          height: 50px;
-          font-size: 24px;
+      .auth-title {
+          font-size: 28px;
           font-family: Arial, sans-serif;
+          color: white;
           text-align: center;
-          border: 2px solid rgba(255, 255, 255, 0.5);
+          margin-bottom: 25px;
+          font-weight: bold;
+      }
+      
+      .auth-input {
+          width: 100%;
+          height: 50px;
+          font-size: 16px;
+          font-family: Arial, sans-serif;
+          border: 2px solid rgba(255, 255, 255, 0.3);
           border-radius: 8px;
-          background: rgba(0, 20, 40, 0.9);
+          background: rgba(255, 255, 255, 0.1);
           color: white;
           padding: 0 15px;
           outline: none;
           box-sizing: border-box;
+          margin-bottom: 15px;
       }
       
-      #nameInput::placeholder {
+      .auth-input::placeholder {
           color: rgba(255, 255, 255, 0.6);
       }
       
-      #nameInput:focus {
+      .auth-input:focus {
           border-color: #00ff88;
           box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+      }
+      
+      .auth-button {
+          width: 100%;
+          height: 50px;
+          font-size: 18px;
+          font-family: Arial, sans-serif;
+          font-weight: bold;
+          background: linear-gradient(45deg, #00ff88, #00cc66);
+          color: white;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+          margin-bottom: 10px;
+          transition: all 0.3s ease;
+      }
+      
+      .auth-button:hover {
+          background: linear-gradient(45deg, #00cc66, #00aa55);
+          transform: translateY(-2px);
+      }
+      
+      .auth-button:active {
+          transform: translateY(0);
+      }
+      
+      .auth-switch {
+          text-align: center;
+          color: rgba(255, 255, 255, 0.7);
+          font-size: 14px;
+          margin-top: 15px;
+      }
+      
+      .auth-link {
+          color: #00ff88;
+          cursor: pointer;
+          text-decoration: underline;
+      }
+      
+      .auth-link:hover {
+          color: #00cc66;
+      }
+      
+      .auth-error {
+          background: rgba(255, 0, 0, 0.2);
+          color: #ff6666;
+          padding: 10px;
+          border-radius: 8px;
+          margin-bottom: 15px;
+          text-align: center;
+          font-size: 14px;
+      }
+      
+      .user-info {
+          position: absolute;
+          top: 20px;
+          right: 20px;
+          z-index: 10;
+          background: rgba(0, 20, 40, 0.9);
+          padding: 15px;
+          border-radius: 10px;
+          border: 2px solid rgba(255, 255, 255, 0.2);
+          color: white;
+          font-family: Arial, sans-serif;
+          min-width: 200px;
+      }
+      
+      .user-stats {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 10px;
+          font-size: 14px;
+      }
+      
+      .logout-button {
+          background: #ff4444;
+          color: white;
+          border: none;
+          padding: 8px 15px;
+          border-radius: 5px;
+          cursor: pointer;
+          font-size: 12px;
       }
       
       /* Mobile responsiveness */
@@ -89,22 +185,51 @@
   <body>
     <canvas id="canvas"></canvas>
     
-    <!-- Name input overlay for menu -->
-    <div id="nameInputContainer" style="display: none;">
-      <input 
-        type="text" 
-        id="nameInput" 
-        placeholder="Enter your name" 
-        maxlength="20"
-        autocomplete="off"
-        autocorrect="off"
-        autocapitalize="off"
-        spellcheck="false"
-      />
+    <!-- Authentication overlay -->
+    <div id="authContainer" class="auth-container" style="display: none;">
+      <div class="auth-title">GUNBATTLE.IO</div>
+      <div id="authError" class="auth-error" style="display: none;"></div>
+      
+      <!-- Login Form -->
+      <div id="loginForm">
+        <input type="text" id="loginUsername" class="auth-input" placeholder="Username" autocomplete="username">
+        <input type="password" id="loginPassword" class="auth-input" placeholder="Password" autocomplete="current-password">
+        <button id="loginButton" class="auth-button">LOGIN</button>
+        <div class="auth-switch">
+          Don't have an account? <span id="showSignup" class="auth-link">Sign up</span>
+        </div>
+      </div>
+      
+      <!-- Signup Form -->
+      <div id="signupForm" style="display: none;">
+        <input type="text" id="signupUsername" class="auth-input" placeholder="Username" autocomplete="username">
+        <input type="email" id="signupEmail" class="auth-input" placeholder="Email (optional)" autocomplete="email">
+        <input type="password" id="signupPassword" class="auth-input" placeholder="Password (min 6 characters)" autocomplete="new-password">
+        <button id="signupButton" class="auth-button">SIGN UP</button>
+        <div class="auth-switch">
+          Already have an account? <span id="showLogin" class="auth-link">Login</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- User info display -->
+    <div id="userInfo" class="user-info" style="display: none;">
+      <div><strong id="userDisplayName"></strong></div>
+      <div class="user-stats">
+        <span>Level: <span id="userLevel"></span></span>
+        <span>Coins: <span id="userCoins"></span></span>
+      </div>
+      <div class="user-stats">
+        <span>XP: <span id="userXP"></span></span>
+        <span>K/D: <span id="userKD"></span></span>
+      </div>
+      <button id="logoutButton" class="logout-button">Logout</button>
     </div>
     
     <script src="/socket.io/socket.io.js"></script>
     <script src="load.js"></script>
+    <script src="auth.js"></script>
     <script src="script.js"></script>
+    <script src="initialize-game.js"></script>
   </body>
 </html>

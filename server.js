@@ -3,13 +3,55 @@ const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
+const cookieParser = require('cookie-parser');
+const { AuthService, authMiddleware, optionalAuthMiddleware } = require('./server/auth');
 
 const app = express();
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST"]
+  }
+});
+
+// Socket.IO authentication middleware
+io.use(async (socket, next) => {
+  try {
+    const cookies = socket.request.headers.cookie;
+    let token = null;
+    
+    if (cookies) {
+      const cookieArr = cookies.split(';');
+      const authCookie = cookieArr.find(cookie => cookie.trim().startsWith('auth_token='));
+      if (authCookie) {
+        token = authCookie.split('=')[1];
+      }
+    }
+    
+    // Also check authorization header
+    if (!token && socket.request.headers.authorization) {
+      token = socket.request.headers.authorization.replace('Bearer ', '');
+    }
+    
+    if (!token) {
+      return next(new Error('Authentication required'));
+    }
+    
+    const user = await authService.getUserById(authService.verifyToken(token).userId);
+    if (!user) {
+      return next(new Error('User not found'));
+    }
+    
+    socket.user = user;
+    next();
+  } catch (error) {
+    next(new Error('Authentication failed'));
   }
 });
 
@@ -30,8 +72,76 @@ app.use(express.static('.', {
     }
 }));
 
+// Authentication routes
+const authService = new AuthService();
+
+// Register endpoint
+app.post('/api/register', async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+    
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
+    const { user, token } = await authService.register(username, email, password);
+    
+    // Set HTTP-only cookie
+    res.cookie('auth_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+    
+    res.json({ user, token });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Login endpoint
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    const { user, token } = await authService.login(username, password);
+    
+    // Set HTTP-only cookie
+    res.cookie('auth_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+    
+    res.json({ user, token });
+  } catch (error) {
+    res.status(401).json({ error: error.message });
+  }
+});
+
+// Logout endpoint
+app.post('/api/logout', (req, res) => {
+  res.clearCookie('auth_token');
+  res.json({ message: 'Logged out successfully' });
+});
+
+// Get current user endpoint
+app.get('/api/user', authMiddleware, (req, res) => {
+  res.json({ user: req.user });
+});
+
 // Serve index.html for root route
-app.get('/', (req, res) => {
+app.get('/', optionalAuthMiddleware, (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
@@ -46,9 +156,14 @@ io.on('connection', (socket) => {
   console.log('Player connected:', socket.id);
 
   socket.on('playerJoin', (playerData) => {
+    // Use authenticated user data from socket middleware
+    const user = socket.user;
     const player = {
       id: socket.id,
-      name: playerData.name || 'Player',
+      accountId: user.id, // Database user ID
+      name: user.username, // Use authenticated username
+      level: user.level,
+      coins: user.coins,
       x: Math.random() * 1500 + 250, // Random spawn position
       y: Math.random() * 1500 + 250,
       radius: 50,
