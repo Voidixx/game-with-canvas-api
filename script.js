@@ -219,6 +219,31 @@ function remove(arr, str){
   if(arr.includes(str)) arr.splice(arr.indexOf(str), 1);
 }
 
+// Visual effects for collision system
+let damageEffectTime = 0;
+let eliminationMessages = [];
+let killNotifications = [];
+
+function showDamageEffect() {
+  damageEffectTime = Date.now() + 300; // Show red flash for 300ms
+}
+
+function showEliminationMessage(message, isMyDeath) {
+  eliminationMessages.push({
+    text: message,
+    time: Date.now() + 3000, // Show for 3 seconds
+    isMyDeath: isMyDeath
+  });
+}
+
+function showKillNotification() {
+  killNotifications.push({
+    text: "+100 ELIMINATION",
+    time: Date.now() + 2000, // Show for 2 seconds
+    y: 150 // Starting Y position
+  });
+}
+
 const loadingImages = [
   {
     url: "images/grass.png",
@@ -360,6 +385,55 @@ function initializeMultiplayer() {
   
   socket.on('projectilesUpdate', (updatedProjectiles) => {
     projectiles = updatedProjectiles;
+  });
+  
+  socket.on('playerHit', (hitData) => {
+    if (hitData.playerId === myPlayerId) {
+      // Update my health if I got hit
+      player.health = hitData.health;
+      
+      // Show damage effect (screen flash)
+      showDamageEffect();
+    } else {
+      // Update other player's health
+      const otherPlayer = otherPlayers.get(hitData.playerId);
+      if (otherPlayer) {
+        otherPlayer.health = hitData.health;
+      }
+    }
+  });
+  
+  socket.on('playerEliminated', (eliminationData) => {
+    if (eliminationData.eliminatedId === myPlayerId) {
+      // I was eliminated
+      showEliminationMessage(`You were eliminated by ${eliminationData.shooterName}!`, true);
+    } else {
+      // Someone else was eliminated
+      showEliminationMessage(`${eliminationData.eliminatedName} was eliminated by ${eliminationData.shooterName}!`, false);
+      
+      // Update shooter's score if it's me
+      if (eliminationData.shooterId === myPlayerId) {
+        player.score = (player.score || 0) + 100;
+        showKillNotification();
+      }
+    }
+  });
+  
+  socket.on('playerRespawned', (respawnData) => {
+    if (respawnData.id === myPlayerId) {
+      // I respawned
+      player.x = respawnData.player.x;
+      player.y = respawnData.player.y;
+      player.health = respawnData.player.health;
+    } else {
+      // Update other player's respawn
+      const otherPlayer = otherPlayers.get(respawnData.id);
+      if (otherPlayer) {
+        otherPlayer.x = respawnData.player.x;
+        otherPlayer.y = respawnData.player.y;
+        otherPlayer.health = respawnData.player.health;
+      }
+    }
   });
   
   socket.on('disconnect', () => {
@@ -508,17 +582,31 @@ function renderGame(interpolationFactor) {
     const otherY = canvas.height / 2 + (otherPlayer.y - renderY);
     
     if (otherX > -100 && otherX < canvas.width + 100 && otherY > -100 && otherY < canvas.height + 100) {
-      // Draw other player
-      c.fillStyle = "#ff4444";
-      c.beginPath();
-      c.arc(otherX, otherY, otherPlayer.radius, 0, Math.PI * 2);
-      c.fill();
+      // Draw other player using the same sprite as main player
+      addImage("player", otherX - otherPlayer.radius, otherY - otherPlayer.radius);
       
       // Draw other player name
       c.fillStyle = "white";
       c.font = `${getResponsiveFontSize(16)}px Arial`;
       c.textAlign = "center";
-      c.fillText(otherPlayer.name, otherX, otherY - otherPlayer.radius - 10);
+      c.fillText(otherPlayer.name, otherX, otherY - otherPlayer.radius - 30);
+      
+      // Draw other player health bar
+      const healthBarWidth = otherPlayer.radius * 1.5;
+      const healthBarHeight = 8;
+      const healthBarX = otherX - healthBarWidth / 2;
+      const healthBarY = otherY - otherPlayer.radius - 20;
+      
+      // Health bar background
+      c.fillStyle = "rgba(255, 0, 0, 0.7)";
+      c.fillRect(healthBarX, healthBarY, healthBarWidth, healthBarHeight);
+      
+      // Health bar fill (handle 0 health correctly)
+      const health = (otherPlayer.health ?? 100);
+      const healthPercent = Math.max(0, Math.min(1, health / 100));
+      c.fillStyle = healthPercent > 0.5 ? "rgba(0, 255, 0, 0.8)" : 
+                    healthPercent > 0.25 ? "rgba(255, 255, 0, 0.8)" : "rgba(255, 0, 0, 0.8)";
+      c.fillRect(healthBarX, healthBarY, healthBarWidth * healthPercent, healthBarHeight);
     }
   });
   
@@ -560,10 +648,38 @@ function renderGame(interpolationFactor) {
   c.textAlign = "right";
   c.fillText("FPS: " + FPS, canvas.width - uiMargin, uiHeight);
   c.fillText("Players: " + (otherPlayers.size + 1), canvas.width - uiMargin, uiHeight + getResponsiveSize(40));
+  c.fillText("Score: " + player.score, canvas.width - uiMargin, uiHeight + getResponsiveSize(80));
   
   // Connection status
   c.fillStyle = isConnected ? "green" : "red";
-  c.fillText(isConnected ? "Connected" : "Disconnected", canvas.width - uiMargin, uiHeight + getResponsiveSize(80));
+  c.fillText(isConnected ? "Connected" : "Disconnected", canvas.width - uiMargin, uiHeight + getResponsiveSize(120));
+  
+  // Draw damage effect (red screen flash)
+  if (damageEffectTime > Date.now()) {
+    c.fillStyle = "rgba(255, 0, 0, 0.3)";
+    c.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  
+  // Draw elimination messages
+  const currentTime = Date.now();
+  eliminationMessages = eliminationMessages.filter(msg => msg.time > currentTime);
+  eliminationMessages.forEach((msg, index) => {
+    c.font = `${getResponsiveFontSize(32)}px Arial`;
+    c.textAlign = "center";
+    c.fillStyle = msg.isMyDeath ? "#ff4444" : "#ffff44";
+    const messageY = canvas.height / 2 - 100 + (index * 40);
+    c.fillText(msg.text, canvas.width / 2, messageY);
+  });
+  
+  // Draw kill notifications
+  killNotifications = killNotifications.filter(notif => notif.time > currentTime);
+  killNotifications.forEach((notif, index) => {
+    c.font = `${getResponsiveFontSize(28)}px Arial`;
+    c.textAlign = "center";
+    c.fillStyle = "#00ff88";
+    const notifY = notif.y + (index * 35);
+    c.fillText(notif.text, canvas.width / 2, notifY);
+  });
   
   // Draw mobile thumbstick
   drawThumbstick();

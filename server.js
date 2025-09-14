@@ -48,7 +48,10 @@ io.on('connection', (socket) => {
       radius: 50,
       speed: 0,
       health: 100,
-      score: 0
+      score: 0,
+      alive: true,
+      lastShot: 0,
+      shootCooldown: 200
     };
     
     gameState.players.set(socket.id, player);
@@ -66,7 +69,7 @@ io.on('connection', (socket) => {
 
   socket.on('playerMove', (moveData) => {
     const player = gameState.players.get(socket.id);
-    if (player) {
+    if (player && player.alive) {
       // Server-side movement validation
       const newX = Math.max(50, Math.min(1950, moveData.x));
       const newY = Math.max(50, Math.min(1950, moveData.y));
@@ -87,7 +90,9 @@ io.on('connection', (socket) => {
 
   socket.on('playerShoot', (shootData) => {
     const player = gameState.players.get(socket.id);
-    if (player) {
+    const now = Date.now();
+    if (player && player.alive && now - player.lastShot >= player.shootCooldown) {
+      player.lastShot = now;
       const projectile = {
         id: uuidv4(),
         playerId: socket.id,
@@ -117,22 +122,100 @@ io.on('connection', (socket) => {
   });
 });
 
-// Simple game update loop for projectiles
+// Collision detection function
+function checkProjectilePlayerCollision(projectile, player) {
+  const dx = projectile.x - player.x;
+  const dy = projectile.y - player.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  return distance < player.radius; // Hit if projectile is within player radius
+}
+
+// Game update loop with collision detection
 setInterval(() => {
-  // Update projectiles
-  gameState.projectiles = gameState.projectiles.filter(projectile => {
+  const projectilesToRemove = [];
+  
+  // Update projectiles and check collisions
+  gameState.projectiles.forEach((projectile, projectileIndex) => {
+    // Update projectile position
     projectile.x += projectile.dirX * projectile.speed;
     projectile.y += projectile.dirY * projectile.speed;
     
+    // Check collision with all alive players (except the shooter)
+    for (let [playerId, player] of gameState.players) {
+      if (playerId !== projectile.playerId && player.alive && checkProjectilePlayerCollision(projectile, player)) {
+        // Hit detected! Apply damage
+        const damage = 25; // Base damage per hit
+        player.health -= damage;
+        
+        // Check if player is eliminated
+        if (player.health <= 0) {
+          player.health = 0;
+          player.alive = false; // Mark as dead
+          
+          // Award points to shooter
+          const shooter = gameState.players.get(projectile.playerId);
+          if (shooter) {
+            shooter.score += 100; // Points for elimination
+          }
+          
+          // Send final hit with 0 health
+          io.emit('playerHit', {
+            playerId: playerId,
+            damage: damage,
+            health: 0,
+            shooterId: projectile.playerId
+          });
+          
+          // Broadcast player elimination
+          io.emit('playerEliminated', {
+            eliminatedId: playerId,
+            eliminatedName: player.name,
+            shooterId: projectile.playerId,
+            shooterName: shooter ? shooter.name : 'Unknown',
+            health: 0
+          });
+          
+          // Reset eliminated player (respawn after brief delay)
+          setTimeout(() => {
+            player.health = 100;
+            player.alive = true;
+            player.x = Math.random() * 1500 + 250;
+            player.y = Math.random() * 1500 + 250;
+            
+            // Broadcast respawn
+            io.emit('playerRespawned', {
+              id: playerId,
+              player: player
+            });
+          }, 1500); // 1.5 second respawn delay
+        } else {
+          // Broadcast hit event for damage
+          io.emit('playerHit', {
+            playerId: playerId,
+            damage: damage,
+            health: player.health,
+            shooterId: projectile.playerId
+          });
+        }
+        
+        // Mark projectile for removal
+        projectilesToRemove.push(projectileIndex);
+        break; // Projectile can only hit one player
+      }
+    }
+    
     // Remove projectiles that are out of bounds
-    return projectile.x > 0 && projectile.x < 2000 && 
-           projectile.y > 0 && projectile.y < 2000;
+    if (projectile.x <= 0 || projectile.x >= 2000 || projectile.y <= 0 || projectile.y >= 2000) {
+      projectilesToRemove.push(projectileIndex);
+    }
   });
   
-  // Broadcast updated projectiles
-  if (gameState.projectiles.length > 0) {
-    io.emit('projectilesUpdate', gameState.projectiles);
-  }
+  // Remove hit projectiles and out-of-bounds projectiles using Set to avoid duplicates
+  const projectilesToRemoveSet = new Set(projectilesToRemove);
+  gameState.projectiles = gameState.projectiles.filter((_, index) => !projectilesToRemoveSet.has(index));
+  
+  // Always broadcast updated projectiles (including empty array to clear client-side projectiles)
+  io.emit('projectilesUpdate', gameState.projectiles);
 }, 1000 / 30); // 30 FPS server update
 
 const port = process.env.PORT || 5000;
