@@ -78,10 +78,27 @@ const weapons = pgTable('weapons', {
   created_at: timestamp('created_at').defaultNow().notNull()
 });
 
+// Game sessions
+const game_sessions = pgTable('game_sessions', {
+  id: serial('id').primaryKey(),
+  user_id: integer('user_id').references(() => users.id).notNull(),
+  game_mode_id: integer('game_mode_id').default(1).notNull(),
+  kills: integer('kills').default(0).notNull(),
+  deaths: integer('deaths').default(0).notNull(),
+  damage_dealt: integer('damage_dealt').default(0).notNull(),
+  survival_time: integer('survival_time').default(0).notNull(), // in seconds
+  placement: integer('placement'), // final ranking in the game
+  coins_earned: integer('coins_earned').default(0).notNull(),
+  experience_earned: integer('experience_earned').default(0).notNull(),
+  started_at: timestamp('started_at').defaultNow().notNull(),
+  ended_at: timestamp('ended_at')
+});
+
 module.exports = {
   users,
   user_stats,
   items,
   user_items,
-  weapons
+  weapons,
+  game_sessions
 };

@@ -5,8 +5,10 @@ const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const cookieParser = require('cookie-parser');
 const { AuthService, authMiddleware, optionalAuthMiddleware } = require('./server/auth');
+const GameStatsService = require('./server/game-stats');
 
 const app = express();
+const gameStats = new GameStatsService();
 
 // Middleware
 app.use(express.json());
@@ -140,6 +142,20 @@ app.get('/api/user', authMiddleware, (req, res) => {
   res.json({ user: req.user });
 });
 
+// Get user stats endpoint
+app.get('/api/stats', authMiddleware, async (req, res) => {
+  try {
+    const stats = await gameStats.getUserStats(req.user.id);
+    if (stats) {
+      res.json(stats);
+    } else {
+      res.status(404).json({ error: 'Stats not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get stats' });
+  }
+});
+
 // Serve index.html for root route
 app.get('/', optionalAuthMiddleware, (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
@@ -155,7 +171,7 @@ const gameState = {
 io.on('connection', (socket) => {
   console.log('Player connected:', socket.id);
 
-  socket.on('playerJoin', (playerData) => {
+  socket.on('playerJoin', async (playerData) => {
     // Use authenticated user data from socket middleware
     const user = socket.user;
     const player = {
@@ -175,6 +191,9 @@ io.on('connection', (socket) => {
       shootCooldown: 200,
       invulnerableUntil: 0
     };
+
+    // Start game session tracking
+    await gameStats.startGameSession(socket.id, user.id);
     
     gameState.players.set(socket.id, player);
     
@@ -246,8 +265,16 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     console.log('Player disconnected:', socket.id);
+    
+    // End game session and cleanup stats
+    const sessionResult = await gameStats.endGameSession(socket.id);
+    if (sessionResult) {
+      // Broadcast session results to player if they reconnect
+      console.log(`Session ended for ${socket.id}: ${sessionResult.coinsEarned} coins, ${sessionResult.experienceEarned} XP`);
+    }
+    
     gameState.players.delete(socket.id);
     
     // Remove projectiles from disconnected player
@@ -267,11 +294,12 @@ function checkProjectilePlayerCollision(projectile, player) {
 }
 
 // Game update loop with collision detection
-setInterval(() => {
+setInterval(async () => {
   const projectilesToRemove = [];
   
   // Update projectiles and check collisions
-  gameState.projectiles.forEach((projectile, projectileIndex) => {
+  for (let projectileIndex = 0; projectileIndex < gameState.projectiles.length; projectileIndex++) {
+    const projectile = gameState.projectiles[projectileIndex];
     // Update projectile position
     projectile.x += projectile.dirX * projectile.speed;
     projectile.y += projectile.dirY * projectile.speed;
@@ -286,16 +314,22 @@ setInterval(() => {
         const damage = 25; // Base damage per hit
         player.health -= damage;
         
+        // Record damage dealt
+        gameStats.recordDamage(projectile.playerId, damage);
+        
         // Check if player is eliminated
         if (player.health <= 0) {
           player.health = 0;
           player.alive = false; // Mark as dead
           
-          // Award points to shooter
+          // Award points to shooter and record kill
           const shooter = gameState.players.get(projectile.playerId);
           if (shooter) {
             shooter.score += 100; // Points for elimination
           }
+          
+          // Record kill in database
+          await gameStats.recordKill(projectile.playerId, playerId);
           
           // Send final hit with 0 health
           io.emit('playerHit', {
@@ -348,7 +382,7 @@ setInterval(() => {
     if (projectile.x <= 0 || projectile.x >= 2000 || projectile.y <= 0 || projectile.y >= 2000) {
       projectilesToRemove.push(projectileIndex);
     }
-  });
+  }
   
   // Remove hit projectiles and out-of-bounds projectiles using Set to avoid duplicates
   const projectilesToRemoveSet = new Set(projectilesToRemove);
