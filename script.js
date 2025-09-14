@@ -243,6 +243,13 @@ const gameStates = {
 let currentGameState = gameStates.LOADING;
 let playerName = "";
 
+// Multiplayer variables
+let socket = null;
+let myPlayerId = null;
+let otherPlayers = new Map();
+let projectiles = [];
+let isConnected = false;
+
 var e = 0;
 const player = {
   x: 300,
@@ -260,7 +267,12 @@ const player = {
   friction: 0.8,
   moving: false,
   slowing: false,
-  directions: []
+  directions: [],
+  health: 100,
+  maxHealth: 100,
+  score: 0,
+  lastShot: 0,
+  shootCooldown: 200
 };
 player.x = random(player.radius, 2000 - player.radius);
 player.y = random(player.radius, 2000 - player.radius);
@@ -304,6 +316,60 @@ function hideNameInput() {
   nameInput = input.value.trim();
 }
 
+function initializeMultiplayer() {
+  socket = io();
+  
+  socket.on('connect', () => {
+    console.log('Connected to server');
+    isConnected = true;
+    // Join the game with player name
+    socket.emit('playerJoin', { name: playerName });
+  });
+  
+  socket.on('gameInit', (data) => {
+    myPlayerId = data.playerId;
+    // Initialize other players
+    data.players.forEach(p => {
+      if (p.id !== myPlayerId) {
+        otherPlayers.set(p.id, p);
+      }
+    });
+    projectiles = data.projectiles || [];
+  });
+  
+  socket.on('playerJoined', (playerData) => {
+    otherPlayers.set(playerData.id, playerData);
+  });
+  
+  socket.on('playerMoved', (moveData) => {
+    const otherPlayer = otherPlayers.get(moveData.id);
+    if (otherPlayer) {
+      otherPlayer.x = moveData.x;
+      otherPlayer.y = moveData.y;
+      otherPlayer.speed = moveData.speed;
+    }
+  });
+  
+  socket.on('playerDisconnected', (playerId) => {
+    otherPlayers.delete(playerId);
+  });
+  
+  socket.on('projectileCreated', (projectile) => {
+    projectiles.push(projectile);
+  });
+  
+  socket.on('projectilesUpdate', (updatedProjectiles) => {
+    projectiles = updatedProjectiles;
+  });
+  
+  socket.on('disconnect', () => {
+    console.log('Disconnected from server');
+    isConnected = false;
+    otherPlayers.clear();
+    projectiles = [];
+  });
+}
+
 function startGame() {
   // Prevent multiple start triggers
   if (currentGameState !== gameStates.MENU) return;
@@ -314,6 +380,9 @@ function startGame() {
   if (menuAnimationId) {
     cancelAnimationFrame(menuAnimationId);
   }
+  
+  // Initialize multiplayer connection
+  initializeMultiplayer();
   animate();
 }
 
@@ -334,6 +403,31 @@ function initializeInputEvents() {
         e.preventDefault();
         startGame();
       }
+    });
+  }
+}
+
+function shootProjectile(targetX, targetY) {
+  const now = Date.now();
+  if (now - player.lastShot < player.shootCooldown || !isConnected) return;
+  
+  player.lastShot = now;
+  
+  // Calculate direction from player to target
+  const dirX = targetX - (canvas.width / 2);
+  const dirY = targetY - (canvas.height / 2);
+  const length = Math.sqrt(dirX * dirX + dirY * dirY);
+  
+  if (length > 0) {
+    const normalizedDirX = dirX / length;
+    const normalizedDirY = dirY / length;
+    
+    // Send shoot command to server
+    socket.emit('playerShoot', {
+      x: player.x,
+      y: player.y,
+      dirX: normalizedDirX,
+      dirY: normalizedDirY
     });
   }
 }
@@ -382,6 +476,15 @@ function updateGame(deltaTime) {
   if (newY - player.radius > 0 && newY + player.radius < 2000) {
     player.y = newY;
   }
+  
+  // Send movement to server if connected
+  if (isConnected && socket && (dx !== 0 || dy !== 0)) {
+    socket.emit('playerMove', {
+      x: player.x,
+      y: player.y,
+      speed: player.speed
+    });
+  }
 }
 
 function renderGame(interpolationFactor) {
@@ -399,7 +502,40 @@ function renderGame(interpolationFactor) {
     }
   }
   
-  // Render player
+  // Render other players
+  otherPlayers.forEach(otherPlayer => {
+    const otherX = canvas.width / 2 + (otherPlayer.x - renderX);
+    const otherY = canvas.height / 2 + (otherPlayer.y - renderY);
+    
+    if (otherX > -100 && otherX < canvas.width + 100 && otherY > -100 && otherY < canvas.height + 100) {
+      // Draw other player
+      c.fillStyle = "#ff4444";
+      c.beginPath();
+      c.arc(otherX, otherY, otherPlayer.radius, 0, Math.PI * 2);
+      c.fill();
+      
+      // Draw other player name
+      c.fillStyle = "white";
+      c.font = `${getResponsiveFontSize(16)}px Arial`;
+      c.textAlign = "center";
+      c.fillText(otherPlayer.name, otherX, otherY - otherPlayer.radius - 10);
+    }
+  });
+  
+  // Render projectiles
+  projectiles.forEach(projectile => {
+    const projX = canvas.width / 2 + (projectile.x - renderX);
+    const projY = canvas.height / 2 + (projectile.y - renderY);
+    
+    if (projX > -50 && projX < canvas.width + 50 && projY > -50 && projY < canvas.height + 50) {
+      c.fillStyle = "#ffff00";
+      c.beginPath();
+      c.arc(projX, projY, 3, 0, Math.PI * 2);
+      c.fill();
+    }
+  });
+  
+  // Render main player
   addImage("player", canvas.width / 2 - player.radius, canvas.height / 2 - player.radius);
   
   // Display UI
@@ -409,8 +545,25 @@ function renderGame(interpolationFactor) {
   const uiMargin = getResponsiveSize(20);
   const uiHeight = getResponsiveSize(50);
   c.fillText("Player: " + playerName, uiMargin, uiHeight);
+  
+  // Health bar
+  const healthBarWidth = getResponsiveSize(200);
+  const healthBarHeight = getResponsiveSize(20);
+  const healthBarX = uiMargin;
+  const healthBarY = uiHeight + getResponsiveSize(10);
+  
+  c.fillStyle = "red";
+  c.fillRect(healthBarX, healthBarY, healthBarWidth, healthBarHeight);
+  c.fillStyle = "green";
+  c.fillRect(healthBarX, healthBarY, (player.health / player.maxHealth) * healthBarWidth, healthBarHeight);
+  
   c.textAlign = "right";
   c.fillText("FPS: " + FPS, canvas.width - uiMargin, uiHeight);
+  c.fillText("Players: " + (otherPlayers.size + 1), canvas.width - uiMargin, uiHeight + getResponsiveSize(40));
+  
+  // Connection status
+  c.fillStyle = isConnected ? "green" : "red";
+  c.fillText(isConnected ? "Connected" : "Disconnected", canvas.width - uiMargin, uiHeight + getResponsiveSize(80));
   
   // Draw mobile thumbstick
   drawThumbstick();
@@ -524,14 +677,19 @@ document.addEventListener("keyup", e => {
   }
 });
 
-// Click handler for desktop menu
+// Click handler for desktop menu and shooting
 canvas.addEventListener("click", e => {
   if (currentGameState === gameStates.MENU && !isTouchDevice) {
     startGame();
+  } else if (currentGameState === gameStates.PLAYING) {
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    shootProjectile(clickX, clickY);
   }
 });
 
-// Touch event handlers for mobile thumbstick and menu
+// Touch event handlers for mobile thumbstick, menu, and shooting
 canvas.addEventListener("touchstart", e => {
   e.preventDefault();
   
@@ -550,6 +708,23 @@ canvas.addEventListener("touchstart", e => {
       startGame();
     }
     return;
+  }
+  
+  // Handle shooting for touches outside thumbstick area
+  if (currentGameState === gameStates.PLAYING && isTouchDevice) {
+    const rect = canvas.getBoundingClientRect();
+    const touchX = e.touches[0].clientX - rect.left;
+    const touchY = e.touches[0].clientY - rect.top;
+    
+    // Check if touch is not on thumbstick
+    const distance = Math.sqrt(
+      (touchX - thumbstick.baseX) ** 2 + (touchY - thumbstick.baseY) ** 2
+    );
+    
+    if (distance > thumbstick.baseRadius) {
+      shootProjectile(touchX, touchY);
+      return;
+    }
   }
   
   if (currentGameState !== gameStates.PLAYING || !isTouchDevice) return;
