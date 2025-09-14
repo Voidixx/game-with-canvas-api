@@ -20,5 +20,5 @@ app.get('/', (req, res) => {
 
 const port = process.env.PORT || 5000;
 app.listen(port, '0.0.0.0', () => {
-    console.log(`Game server running at http://0.0.0.0:${port}`);
+    console.log(`Gunbattle.io server running at http://0.0.0.0:${port}`);
 });

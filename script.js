@@ -191,7 +191,7 @@ function drawMenuScreen() {
   c.font = `${getResponsiveFontSize(64)}px Arial`;
   c.fillStyle = "white";
   c.textAlign = "center";
-  c.fillText("ADVENTURE GAME", canvas.width / 2, canvas.height / 2 - getResponsiveSize(150));
+  c.fillText("GUNBATTLE.IO", canvas.width / 2, canvas.height / 2 - getResponsiveSize(150));
   
   // Player name label
   c.font = `${getResponsiveFontSize(32)}px Arial`;
