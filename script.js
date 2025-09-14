@@ -63,6 +63,93 @@ let nameInput = "";
 let showCursor = true;
 let cursorBlinkTime = 0;
 
+// Mobile thumbstick variables
+let isTouchDevice = false;
+let thumbstick = {
+  baseX: 120,
+  baseY: canvas.height - 120,
+  stickX: 120,
+  stickY: canvas.height - 120,
+  baseRadius: 60,
+  stickRadius: 25,
+  isActive: false,
+  touchId: null,
+  maxDistance: 50
+};
+
+// Detect if device supports touch
+function detectTouchDevice() {
+  isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+}
+
+detectTouchDevice();
+
+// Update thumbstick position on resize
+function updateThumbstickPosition() {
+  thumbstick.baseX = 120;
+  thumbstick.baseY = canvas.height - 120;
+  thumbstick.stickX = thumbstick.baseX;
+  thumbstick.stickY = thumbstick.baseY;
+}
+
+function drawThumbstick() {
+  if (!isTouchDevice || currentGameState !== gameStates.PLAYING) return;
+  
+  c.save();
+  
+  // Base circle (outer ring)
+  c.fillStyle = "rgba(255, 255, 255, 0.3)";
+  c.strokeStyle = "rgba(255, 255, 255, 0.5)";
+  c.lineWidth = 3;
+  c.beginPath();
+  c.arc(thumbstick.baseX, thumbstick.baseY, thumbstick.baseRadius, 0, Math.PI * 2);
+  c.fill();
+  c.stroke();
+  
+  // Stick circle (inner control)
+  const stickOpacity = thumbstick.isActive ? 0.8 : 0.6;
+  c.fillStyle = `rgba(0, 255, 136, ${stickOpacity})`;
+  c.strokeStyle = `rgba(0, 200, 100, ${stickOpacity})`;
+  c.lineWidth = 2;
+  c.beginPath();
+  c.arc(thumbstick.stickX, thumbstick.stickY, thumbstick.stickRadius, 0, Math.PI * 2);
+  c.fill();
+  c.stroke();
+  
+  c.restore();
+}
+
+function updatePlayerMovementFromThumbstick() {
+  if (!thumbstick.isActive) {
+    // Reset all movement when thumbstick is not active
+    player.left = player.right = player.up = player.down = false;
+    return;
+  }
+  
+  const deltaX = thumbstick.stickX - thumbstick.baseX;
+  const deltaY = thumbstick.stickY - thumbstick.baseY;
+  const deadzone = 15; // Minimum movement threshold
+  
+  // Reset movement
+  player.left = player.right = player.up = player.down = false;
+  
+  // Set movement based on thumbstick position
+  if (Math.abs(deltaX) > deadzone) {
+    if (deltaX > 0) player.right = true;
+    else player.left = true;
+  }
+  
+  if (Math.abs(deltaY) > deadzone) {
+    if (deltaY > 0) player.down = true;
+    else player.up = true;
+  }
+  
+  // Set player speed based on distance from center
+  const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+  const normalizedDistance = Math.min(distance / thumbstick.maxDistance, 1);
+  player.speed = normalizedDistance * 5; // Max speed of 5
+}
+
 function drawMenuScreen() {
   c.clearRect(0, 0, canvas.width, canvas.height);
   menuAnimationTime += 0.02;
@@ -227,6 +314,11 @@ function animate(){
     // console.log(fps);
     fps = 0;
   }
+  // Update thumbstick movement before applying physics (reduces input lag)
+  if (isTouchDevice && thumbstick.isActive) {
+    updatePlayerMovementFromThumbstick();
+  }
+  
   if(player.x - player.radius <= 0) player.left = false;
   if(player.x + player.radius >= 2000) player.right = false;
   if(player.y - player.radius <= 0) player.up = false;
@@ -243,10 +335,14 @@ function animate(){
   }
   addImage("player", canvas.width / 2 - player.radius, canvas.height / 2 - player.radius);
   
-  // Display player name
+  
+  // Display player name and thumbstick
   c.fillStyle = "white";
   c.fillText("Player: " + playerName, 20, 50);
   c.fillText("FPS: " + FPS, canvas.width - 200, 50);
+  
+  // Draw mobile thumbstick
+  drawThumbstick();
   
   requestAnimationFrame(animate);
   fps++;
@@ -371,7 +467,97 @@ document.addEventListener("keyup", e => {
   }
 });
 
+// Touch event handlers for mobile thumbstick
+canvas.addEventListener("touchstart", e => {
+  e.preventDefault();
+  if (currentGameState !== gameStates.PLAYING || !isTouchDevice) return;
+  
+  for (let touch of e.changedTouches) {
+    const rect = canvas.getBoundingClientRect();
+    const touchX = touch.clientX - rect.left;
+    const touchY = touch.clientY - rect.top;
+    
+    // Check if touch is within thumbstick base
+    const distance = Math.sqrt(
+      (touchX - thumbstick.baseX) ** 2 + (touchY - thumbstick.baseY) ** 2
+    );
+    
+    if (distance <= thumbstick.baseRadius && !thumbstick.isActive) {
+      thumbstick.isActive = true;
+      thumbstick.touchId = touch.identifier;
+      thumbstick.stickX = touchX;
+      thumbstick.stickY = touchY;
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchmove", e => {
+  e.preventDefault();
+  if (currentGameState !== gameStates.PLAYING || !isTouchDevice || !thumbstick.isActive) return;
+  
+  for (let touch of e.changedTouches) {
+    if (touch.identifier === thumbstick.touchId) {
+      const rect = canvas.getBoundingClientRect();
+      const touchX = touch.clientX - rect.left;
+      const touchY = touch.clientY - rect.top;
+      
+      // Calculate distance from base
+      const deltaX = touchX - thumbstick.baseX;
+      const deltaY = touchY - thumbstick.baseY;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      
+      // Constrain stick within max distance
+      if (distance <= thumbstick.maxDistance) {
+        thumbstick.stickX = touchX;
+        thumbstick.stickY = touchY;
+      } else {
+        // Keep stick at edge of allowed area
+        const angle = Math.atan2(deltaY, deltaX);
+        thumbstick.stickX = thumbstick.baseX + Math.cos(angle) * thumbstick.maxDistance;
+        thumbstick.stickY = thumbstick.baseY + Math.sin(angle) * thumbstick.maxDistance;
+      }
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchend", e => {
+  e.preventDefault();
+  if (!isTouchDevice) return;
+  
+  for (let touch of e.changedTouches) {
+    if (touch.identifier === thumbstick.touchId) {
+      thumbstick.isActive = false;
+      thumbstick.touchId = null;
+      thumbstick.stickX = thumbstick.baseX;
+      thumbstick.stickY = thumbstick.baseY;
+      
+      // Stop player movement when thumbstick is released
+      player.left = player.right = player.up = player.down = false;
+      player.speed = 0;
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchcancel", e => {
+  e.preventDefault();
+  if (!isTouchDevice) return;
+  
+  for (let touch of e.changedTouches) {
+    if (touch.identifier === thumbstick.touchId) {
+      thumbstick.isActive = false;
+      thumbstick.touchId = null;
+      thumbstick.stickX = thumbstick.baseX;
+      thumbstick.stickY = thumbstick.baseY;
+      
+      // Stop player movement when thumbstick is canceled
+      player.left = player.right = player.up = player.down = false;
+      player.speed = 0;
+    }
+  }
+}, { passive: false });
+
 window.addEventListener("resize", () => {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
+  updateThumbstickPosition();
 })
