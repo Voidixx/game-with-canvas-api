@@ -1,5 +1,5 @@
 hidden=[".config"]
-modules = ["nodejs-20", "python-3.11"]
+modules = ["nodejs-20", "web", "python-3.12", "nix"]
 
 # hosting is currently hardcoded for this language
 # [hosting]
@@ -7,7 +7,7 @@ modules = ["nodejs-20", "python-3.11"]
 # directory= "/"
 
 [nix]
-channel = "stable-21_11"
+channel = "stable-25_05"
 
 [languages.html]
 pattern = "**/*.html"
@@ -200,7 +200,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python3 simple_server.py"
+args = "npm start"
 waitForPort = 5000
 
 [workflows.workflow.metadata]
@@ -211,5 +211,5 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
-localPort = 38491
+localPort = 37383
 externalPort = 3000
