@@ -2,8 +2,7 @@
 window.initializeGame = function() {
   if (typeof window.currentGameState !== 'undefined' && 
       window.currentGameState === window.gameStates.MENU && 
-      window.isUserAuthenticated && 
-      window.isUserAuthenticated()) {
+      (window.isUserAuthenticated() || (window.gameAuth && window.gameAuth.isGuestUser()))) {
     window.startGame();
   }
 };

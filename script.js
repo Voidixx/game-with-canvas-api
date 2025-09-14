@@ -340,8 +340,12 @@ function initializeMultiplayer() {
     console.log('Connected to server');
     isConnected = true;
     
-    // Join the game - server will use authenticated user data from socket middleware
-    socket.emit('playerJoin', {});
+    // Join the game - send guest username if guest, otherwise server uses authenticated user
+    const joinData = {};
+    if (window.gameAuth && window.gameAuth.isGuestUser()) {
+      joinData.username = window.gameAuth.getUser().username;
+    }
+    socket.emit('playerJoin', joinData);
   });
   
   socket.on('gameInit', (data) => {
@@ -441,8 +445,8 @@ function startGame() {
   // Prevent multiple start triggers
   if (currentGameState !== gameStates.MENU) return;
   
-  // Check if user is authenticated
-  if (!isUserAuthenticated()) {
+  // Check if user is authenticated OR is a guest
+  if (!isUserAuthenticated() && !(window.gameAuth && window.gameAuth.isGuestUser())) {
     showAuthForm();
     return;
   }
@@ -721,9 +725,9 @@ function initGame() {
   updateThumbstickPosition(); // Initialize responsive thumbstick sizing
   initializeInputEvents(); // Set up input event listeners
   
-  // Check if user is already authenticated
-  if (isUserAuthenticated()) {
-    // User is logged in, go straight to game
+  // Check if user is already authenticated or is a guest
+  if (isUserAuthenticated() || (window.gameAuth && window.gameAuth.isGuestUser())) {
+    // User is logged in or is guest, go to game
     startGame();
   } else {
     // Show authentication form
