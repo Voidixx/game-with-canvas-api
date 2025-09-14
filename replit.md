@@ -1,8 +1,8 @@
-# Adventure Game
+# Gunbattle.io
 
 ## Overview
 
-An HTML5 canvas-based adventure game built with vanilla JavaScript. The project implements a client-side game engine with dynamic asset loading, responsive design, and mobile-first optimization. The game features a custom loading screen system and is designed to run in web environments, particularly suited for platforms like Replit.
+A real-time multiplayer battle royale game built with Node.js, Express, Socket.IO, and HTML5 Canvas. The project features a real-time multiplayer server, client-side game engine with dynamic asset loading, responsive design, and mobile-first optimization. Players can join the game, move around a 2D world, and shoot projectiles at each other in real-time. The game is optimized for the Replit environment.
 
 ## User Preferences
 
@@ -27,7 +27,9 @@ Preferred communication style: Simple, everyday language.
 - **Event System**: Touch and mouse input handling optimized for mobile devices
 
 ### Server Architecture
-- **Dual Server Support**: Both Node.js (Express) and Python (SimpleHTTPServer) implementations
+- **Node.js Backend**: Express.js server with Socket.IO for real-time multiplayer communication
+- **Real-time Multiplayer**: WebSocket-based game state synchronization for multiple players
+- **Game State Management**: Server-side player tracking, movement validation, and projectile physics
 - **Static File Serving**: Serves game assets directly from the project root
 - **Cache Control**: Implements no-cache headers to prevent asset caching issues in development
 - **Cross-Origin Headers**: Configured for iframe embedding in platforms like Replit
@@ -35,8 +37,9 @@ Preferred communication style: Simple, everyday language.
 ## External Dependencies
 
 ### Runtime Dependencies
-- **Express.js**: Node.js web server framework for static file serving and development server
-- **Node.js Built-in HTTP**: Alternative Python server using built-in HTTP server module
+- **Express.js**: Node.js web server framework for static file serving and HTTP server
+- **Socket.IO**: Real-time bidirectional event-based communication for multiplayer functionality
+- **UUID**: For generating unique identifiers for game objects like projectiles
 
 ### Development Environment
 - **Replit Platform**: Designed specifically for Replit's containerized environment
