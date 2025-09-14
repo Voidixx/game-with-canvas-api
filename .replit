@@ -1,4 +1,5 @@
 hidden=[".config"]
+modules = ["nodejs-20", "python-3.11"]
 
 # hosting is currently hardcoded for this language
 # [hosting]
@@ -177,3 +178,34 @@ start = "vscode-css-language-server --stdio"
 
 [gitHubImport]
 requiredFiles = [".replit", "replit.nix", ".config"]
+
+[agent]
+expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Game Server"
+
+[[workflows.workflow]]
+name = "Game Server"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python3 simple_server.py"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
