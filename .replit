@@ -215,6 +215,10 @@ externalPort = 80
 localPort = 36991
 externalPort = 3000
 
+[[ports]]
+localPort = 41867
+externalPort = 3001
+
 [deployment]
 deploymentTarget = "autoscale"
 run = ["node", "server.js"]
