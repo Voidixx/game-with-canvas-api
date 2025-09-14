@@ -60,8 +60,8 @@ function drawLoadingScreen() {
 // Menu screen variables
 let menuAnimationTime = 0;
 let nameInput = "";
-let showCursor = true;
-let cursorBlinkTime = 0;
+const nameInputElement = document.getElementById('nameInput');
+const nameInputContainer = document.getElementById('nameInputContainer');
 
 // Mobile thumbstick variables
 let isTouchDevice = false;
@@ -170,7 +170,6 @@ function updatePlayerMovementFromThumbstick() {
 function drawMenuScreen() {
   c.clearRect(0, 0, canvas.width, canvas.height);
   menuAnimationTime += 0.02;
-  cursorBlinkTime += 0.1;
   
   // Background gradient
   const gradient = c.createLinearGradient(0, 0, 0, canvas.height);
@@ -196,53 +195,20 @@ function drawMenuScreen() {
   // Player name label
   c.font = `${getResponsiveFontSize(32)}px Arial`;
   c.fillStyle = "#00ff88";
-  if (isTouchDevice) {
-    c.fillText("Your name: (default Player)", canvas.width / 2, canvas.height / 2 - getResponsiveSize(60));
-  } else {
-    c.fillText("Enter your name:", canvas.width / 2, canvas.height / 2 - getResponsiveSize(60));
-  }
-  
-  // Name input box
-  const inputBoxWidth = getResponsiveSize(400);
-  const inputBoxHeight = getResponsiveSize(50);
-  const inputBoxX = canvas.width / 2 - inputBoxWidth / 2;
-  const inputBoxY = canvas.height / 2 - 25;
-  
-  // Input box background
-  c.fillStyle = "rgba(255, 255, 255, 0.1)";
-  c.fillRect(inputBoxX - 2, inputBoxY - 2, inputBoxWidth + 4, inputBoxHeight + 4);
-  c.fillStyle = "rgba(0, 20, 40, 0.8)";
-  c.fillRect(inputBoxX, inputBoxY, inputBoxWidth, inputBoxHeight);
-  
-  // Player name text
-  c.font = `${getResponsiveFontSize(28)}px Arial`;
-  c.fillStyle = "white";
-  c.textAlign = "left";
-  const nameText = nameInput || "Player";
-  const textPadding = getResponsiveSize(15);
-  c.fillText(nameText, inputBoxX + textPadding, inputBoxY + inputBoxHeight * 0.65);
-  
-  // Blinking cursor
-  if (Math.floor(cursorBlinkTime) % 2 === 0) {
-    const textWidth = c.measureText(nameText).width;
-    c.fillRect(inputBoxX + textPadding + textWidth + getResponsiveSize(5), 
-               inputBoxY + inputBoxHeight * 0.2, 
-               getResponsiveSize(2), 
-               inputBoxHeight * 0.6);
-  }
+  c.fillText("Enter your name:", canvas.width / 2, canvas.height / 2 - getResponsiveSize(60));
   
   // Instructions
   c.font = `${getResponsiveFontSize(24)}px Arial`;
   c.fillStyle = "#cccccc";
   c.textAlign = "center";
-  const instruction1Y = canvas.height / 2 + getResponsiveSize(80);
-  const instruction2Y = canvas.height / 2 + getResponsiveSize(120);
+  const instruction1Y = canvas.height / 2 + getResponsiveSize(100);
+  const instruction2Y = canvas.height / 2 + getResponsiveSize(140);
   
   if (isTouchDevice) {
     c.fillText("Touch anywhere to start playing", canvas.width / 2, instruction1Y);
     c.fillText("Use the virtual joystick to move", canvas.width / 2, instruction2Y);
   } else {
-    c.fillText("Type your name and press ENTER or click to start", canvas.width / 2, instruction1Y);
+    c.fillText("Press ENTER or click to start", canvas.width / 2, instruction1Y);
     c.fillText("Use WASD or Arrow Keys to move", canvas.width / 2, instruction2Y);
   }
 }
@@ -322,7 +288,25 @@ var FPS = 60;
 
 let menuAnimationId;
 
+function showNameInput() {
+  nameInputContainer.style.display = 'block';
+  nameInputElement.value = nameInput;
+  // Focus with a small delay to ensure mobile keyboards open properly
+  setTimeout(() => {
+    nameInputElement.focus();
+  }, 100);
+}
+
+function hideNameInput() {
+  nameInputContainer.style.display = 'none';
+  nameInput = nameInputElement.value.trim();
+}
+
 function startGame() {
+  // Prevent multiple start triggers
+  if (currentGameState !== gameStates.MENU) return;
+  
+  hideNameInput();
   currentGameState = gameStates.PLAYING;
   playerName = nameInput || "Player";
   if (menuAnimationId) {
@@ -334,6 +318,20 @@ function startGame() {
 function animateMenu() {
   drawMenuScreen();
   menuAnimationId = requestAnimationFrame(animateMenu);
+}
+
+// Initialize name input events
+if (nameInputElement) {
+  nameInputElement.addEventListener('input', () => {
+    nameInput = nameInputElement.value.trim();
+  });
+  
+  nameInputElement.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      startGame();
+    }
+  });
 }
 
 function animate(){
@@ -389,6 +387,7 @@ function animate(){
 loadImages(loadingImages).then(() => {
   currentGameState = gameStates.MENU;
   updateThumbstickPosition(); // Initialize responsive thumbstick sizing
+  showNameInput(); // Show the HTML input overlay
   animateMenu();
 });
 
@@ -396,18 +395,9 @@ loadImages(loadingImages).then(() => {
 document.addEventListener("keydown", e => {
   // Menu input handling
   if (currentGameState === gameStates.MENU) {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && e.target.tagName !== 'INPUT') {
       e.preventDefault();
       startGame();
-    } else if (e.key === "Backspace") {
-      e.preventDefault();
-      nameInput = nameInput.slice(0, -1);
-    } else if (e.key.length === 1 && nameInput.length < 20) {
-      // Add regular characters to name input
-      const allowedChars = /^[a-zA-Z0-9\s]$/;
-      if (allowedChars.test(e.key)) {
-        nameInput += e.key;
-      }
     }
     return;
   }
@@ -517,9 +507,20 @@ canvas.addEventListener("click", e => {
 canvas.addEventListener("touchstart", e => {
   e.preventDefault();
   
-  // Handle menu screen touch to start game
+  // Handle menu screen touch - only start if not touching the input area
   if (currentGameState === gameStates.MENU) {
-    startGame();
+    const rect = canvas.getBoundingClientRect();
+    const touchX = e.touches[0].clientX - rect.left;
+    const touchY = e.touches[0].clientY - rect.top;
+    
+    // Check if touch is near the input area (center of screen)
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const inputAreaSize = 200; // Rough area around the input
+    
+    if (Math.abs(touchX - centerX) > inputAreaSize || Math.abs(touchY - centerY) > inputAreaSize) {
+      startGame();
+    }
     return;
   }
   

@@ -33,10 +33,76 @@
           top: 0;
           left: 0;
       }
+      
+      #nameInputContainer {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          z-index: 10;
+          margin-top: 20px;
+      }
+      
+      #nameInput {
+          width: 400px;
+          max-width: 80vw;
+          height: 50px;
+          font-size: 24px;
+          font-family: Arial, sans-serif;
+          text-align: center;
+          border: 2px solid rgba(255, 255, 255, 0.5);
+          border-radius: 8px;
+          background: rgba(0, 20, 40, 0.9);
+          color: white;
+          padding: 0 15px;
+          outline: none;
+          box-sizing: border-box;
+      }
+      
+      #nameInput::placeholder {
+          color: rgba(255, 255, 255, 0.6);
+      }
+      
+      #nameInput:focus {
+          border-color: #00ff88;
+          box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+      }
+      
+      /* Mobile responsiveness */
+      @media (max-width: 768px) {
+          #nameInput {
+              font-size: 20px;
+              height: 45px;
+              width: 350px;
+          }
+      }
+      
+      @media (max-width: 480px) {
+          #nameInput {
+              font-size: 18px;
+              height: 40px;
+              width: 280px;
+          }
+      }
     </style>
   </head>
   <body>
     <canvas id="canvas"></canvas>
+    
+    <!-- Name input overlay for menu -->
+    <div id="nameInputContainer" style="display: none;">
+      <input 
+        type="text" 
+        id="nameInput" 
+        placeholder="Enter your name" 
+        maxlength="20"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+      />
+    </div>
+    
     <script src="load.js"></script>
     <script src="script.js"></script>
   </body>
