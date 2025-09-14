@@ -2,10 +2,63 @@
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-c.font = "100px Arial";
-c.fillStyle = "white";
-c.textAlign = "center";
-c.fillText("Loading...", canvas.width / 2, canvas.height / 2);
+// Enhanced loading screen
+let loadingProgress = 0;
+let loadingAnimation = 0;
+
+function drawLoadingScreen() {
+  c.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Background gradient
+  const gradient = c.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, '#1a1a2e');
+  gradient.addColorStop(1, '#16213e');
+  c.fillStyle = gradient;
+  c.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Animated loading dots
+  loadingAnimation += 0.1;
+  
+  // Title
+  c.font = "48px Arial";
+  c.fillStyle = "white";
+  c.textAlign = "center";
+  c.fillText("LOADING GAME", canvas.width / 2, canvas.height / 2 - 100);
+  
+  // Progress bar background
+  const progressBarWidth = 400;
+  const progressBarHeight = 20;
+  const progressBarX = canvas.width / 2 - progressBarWidth / 2;
+  const progressBarY = canvas.height / 2 - 10;
+  
+  c.fillStyle = "#333";
+  c.fillRect(progressBarX - 2, progressBarY - 2, progressBarWidth + 4, progressBarHeight + 4);
+  
+  // Progress bar fill
+  const progressFillWidth = (loadingProgress / 100) * progressBarWidth;
+  const progressGradient = c.createLinearGradient(progressBarX, 0, progressBarX + progressBarWidth, 0);
+  progressGradient.addColorStop(0, '#00ff88');
+  progressGradient.addColorStop(1, '#00cc66');
+  c.fillStyle = progressGradient;
+  c.fillRect(progressBarX, progressBarY, progressFillWidth, progressBarHeight);
+  
+  // Progress percentage
+  c.font = "24px Arial";
+  c.fillStyle = "white";
+  c.fillText(Math.floor(loadingProgress) + "%", canvas.width / 2, canvas.height / 2 + 60);
+  
+  // Animated dots
+  const dots = Math.floor(loadingAnimation) % 4;
+  let dotText = "";
+  for (let i = 0; i < dots; i++) {
+    dotText += ".";
+  }
+  c.font = "36px Arial";
+  c.fillText(dotText, canvas.width / 2, canvas.height / 2 + 100);
+}
+
+// Initial loading screen
+drawLoadingScreen();
 
 function random(number1, number2){
   return Math.round(Math.random() * (number2 - number1)) + number1;
