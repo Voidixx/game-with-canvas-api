@@ -60,8 +60,8 @@ function drawLoadingScreen() {
 // Menu screen variables
 let menuAnimationTime = 0;
 let nameInput = "";
-const nameInputElement = document.getElementById('nameInput');
-const nameInputContainer = document.getElementById('nameInputContainer');
+let nameInputElement = null;
+let nameInputContainer = null;
 
 // Mobile thumbstick variables
 let isTouchDevice = false;
@@ -150,7 +150,7 @@ function updatePlayerMovementFromThumbstick() {
   // Reset movement
   player.left = player.right = player.up = player.down = false;
   
-  // Set movement based on thumbstick position
+  // Set movement based on thumbstick position (let physics handle speed)
   if (Math.abs(deltaX) > deadzone) {
     if (deltaX > 0) player.right = true;
     else player.left = true;
@@ -160,11 +160,6 @@ function updatePlayerMovementFromThumbstick() {
     if (deltaY > 0) player.down = true;
     else player.up = true;
   }
-  
-  // Set player speed based on distance from center
-  const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-  const normalizedDistance = Math.min(distance / thumbstick.maxDistance, 1);
-  player.speed = normalizedDistance * 5; // Max speed of 5
 }
 
 function drawMenuScreen() {
@@ -252,54 +247,61 @@ var e = 0;
 const player = {
   x: 300,
   y: 300,
+  prevX: 300,
+  prevY: 300,
   left: false,
   right: false,
   up: false,
   down: false,
   radius: 50,
   speed: 0,
+  maxSpeed: 5,
+  acceleration: 0.5,
+  friction: 0.8,
   moving: false,
-  // keyspressed: 0,
   slowing: false,
   directions: []
 };
 player.x = random(player.radius, 2000 - player.radius);
 player.y = random(player.radius, 2000 - player.radius);
 
-function gradual(from, to){
-  return new Promise((resolve, reject) => {
-    var num = 0.75;
-    if(from > to) num = -num;
-    var startTime = Date.now();
-    var int = setInterval(() => {
-      player.speed += num;
-      if((player.speed >= to && from < to) || ((player.speed <= to || player.moving) && from > to) || Date.now() - startTime >= Math.abs(from - to) * 15 / Math.abs(num) || player.directions.length > 1){
-        clearInterval(int);
-        player.speed = to;
-        resolve();
-      }
-    }, 15);
-  })
-}
 
+// Performance timing
 var time = Date.now();
 var fps = 0;
 var FPS = 60;
 
+// Fixed timestep simulation
+const FIXED_TIMESTEP = 1000 / 60; // 60 FPS simulation
+const MAX_FRAME_DELTA = 250; // Max catchup time
+let lastFrameTime = Date.now();
+let accumulatedTime = 0;
+
 let menuAnimationId;
 
 function showNameInput() {
-  nameInputContainer.style.display = 'block';
-  nameInputElement.value = nameInput;
+  const container = document.getElementById('nameInputContainer');
+  const input = document.getElementById('nameInput');
+  if (!container || !input) return;
+  
+  nameInputContainer = container;
+  nameInputElement = input;
+  
+  container.style.display = 'block';
+  input.value = nameInput;
   // Focus with a small delay to ensure mobile keyboards open properly
   setTimeout(() => {
-    nameInputElement.focus();
+    input.focus();
   }, 100);
 }
 
 function hideNameInput() {
-  nameInputContainer.style.display = 'none';
-  nameInput = nameInputElement.value.trim();
+  const container = document.getElementById('nameInputContainer');
+  const input = document.getElementById('nameInput');
+  if (!container || !input) return;
+  
+  container.style.display = 'none';
+  nameInput = input.value.trim();
 }
 
 function startGame() {
@@ -320,54 +322,87 @@ function animateMenu() {
   menuAnimationId = requestAnimationFrame(animateMenu);
 }
 
-// Initialize name input events
-if (nameInputElement) {
-  nameInputElement.addEventListener('input', () => {
-    nameInput = nameInputElement.value.trim();
-  });
-  
-  nameInputElement.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      startGame();
-    }
-  });
+function initializeInputEvents() {
+  const input = document.getElementById('nameInput');
+  if (input) {
+    input.addEventListener('input', () => {
+      nameInput = input.value.trim();
+    });
+    
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        startGame();
+      }
+    });
+  }
 }
 
-function animate(){
-  if (currentGameState !== gameStates.PLAYING) return;
-  
-  c.font = "30px Arial";
-  c.textAlign = "left";
-  if(Date.now() - time >= 1000){
-    time = Date.now();
-    FPS = fps;
-    // console.log(fps);
-    fps = 0;
-  }
+function updateGame(deltaTime) {
   // Update thumbstick movement before applying physics (reduces input lag)
   if (isTouchDevice && thumbstick.isActive) {
     updatePlayerMovementFromThumbstick();
   }
   
-  if(player.x - player.radius <= 0) player.left = false;
-  if(player.x + player.radius >= 2000) player.right = false;
-  if(player.y - player.radius <= 0) player.up = false;
-  if(player.y + player.radius >= 2000) player.down = false;
-  if(player.left) player.x -= player.speed;
-  if(player.right) player.x += player.speed;
-  if(player.up) player.y -= player.speed;
-  if(player.down) player.y += player.speed;
+  // Store previous position for interpolation
+  player.prevX = player.x;
+  player.prevY = player.y;
+  
+  // Calculate movement direction vector
+  let dx = 0, dy = 0;
+  if (player.left) dx -= 1;
+  if (player.right) dx += 1;
+  if (player.up) dy -= 1;
+  if (player.down) dy += 1;
+  
+  // Normalize movement vector to ensure consistent speed in all directions
+  const vectorLength = Math.sqrt(dx * dx + dy * dy);
+  if (vectorLength > 0) {
+    dx = dx / vectorLength;
+    dy = dy / vectorLength;
+  }
+  
+  // Improved physics with acceleration/deceleration
+  let targetSpeed = vectorLength > 0 ? player.maxSpeed : 0;
+  
+  // Smooth speed transition
+  if (targetSpeed > player.speed) {
+    player.speed = Math.min(player.speed + player.acceleration, targetSpeed);
+  } else {
+    player.speed = Math.max(player.speed * player.friction, 0);
+  }
+
+  // Apply movement with boundary checking
+  const newX = player.x + dx * player.speed;
+  const newY = player.y + dy * player.speed;
+  
+  if (newX - player.radius > 0 && newX + player.radius < 2000) {
+    player.x = newX;
+  }
+  if (newY - player.radius > 0 && newY + player.radius < 2000) {
+    player.y = newY;
+  }
+}
+
+function renderGame(interpolationFactor) {
+  // Clear canvas
   c.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Interpolate player position for smooth rendering
+  const renderX = player.prevX + (player.x - player.prevX) * interpolationFactor;
+  const renderY = player.prevY + (player.y - player.prevY) * interpolationFactor;
+  
+  // Render background tiles with camera offset
   for(let i = canvas.width / 2; i <= canvas.width / 2 + 1500; i += 500){
     for(let j = canvas.height / 2; j <= canvas.height / 2 + 1500; j += 500){
-      addImage("grass", i - player.x, j - player.y);
+      addImage("grass", i - renderX, j - renderY);
     }
   }
+  
+  // Render player
   addImage("player", canvas.width / 2 - player.radius, canvas.height / 2 - player.radius);
   
-  
-  // Display player name and thumbstick
+  // Display UI
   c.fillStyle = "white";
   c.font = `${getResponsiveFontSize(30)}px Arial`;
   c.textAlign = "left";
@@ -379,16 +414,56 @@ function animate(){
   
   // Draw mobile thumbstick
   drawThumbstick();
+}
+
+function animate(){
+  if (currentGameState !== gameStates.PLAYING) return;
+  
+  const currentTime = Date.now();
+  let frameTime = currentTime - lastFrameTime;
+  lastFrameTime = currentTime;
+  
+  // Clamp frame time to prevent spiral of death
+  frameTime = Math.min(frameTime, MAX_FRAME_DELTA);
+  accumulatedTime += frameTime;
+  
+  // FPS counter
+  if(currentTime - time >= 1000){
+    time = currentTime;
+    FPS = fps;
+    fps = 0;
+  }
+  
+  // Fixed timestep updates
+  while (accumulatedTime >= FIXED_TIMESTEP) {
+    updateGame(FIXED_TIMESTEP);
+    accumulatedTime -= FIXED_TIMESTEP;
+  }
+  
+  // Interpolated rendering
+  const interpolationFactor = accumulatedTime / FIXED_TIMESTEP;
+  renderGame(interpolationFactor);
   
   requestAnimationFrame(animate);
   fps++;
 }
 
-loadImages(loadingImages).then(() => {
+function initGame() {
   currentGameState = gameStates.MENU;
   updateThumbstickPosition(); // Initialize responsive thumbstick sizing
+  initializeInputEvents(); // Set up input event listeners
   showNameInput(); // Show the HTML input overlay
   animateMenu();
+}
+
+loadImages(loadingImages).then(() => {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initGame);
+  } else {
+    initGame();
+  }
+}).catch(error => {
+  console.error('Failed to load game assets:', error);
 });
 
 
@@ -405,38 +480,28 @@ document.addEventListener("keydown", e => {
   // Game movement handling
   if (currentGameState === gameStates.PLAYING) {
     e.preventDefault();
-    if(player.slowing) return;
     
     if((e.key == "w" || e.key == "ArrowUp") && !player.up){
       player.up = true;
-      if(!player.directions.length) gradual(0, 5);
       player.directions.push("up");
-      player.moving = true;
       player.down = false;
       remove(player.directions, "down");
-    } if((e.key == "a" || e.key == "ArrowLeft") && !player.left){
+    } else if((e.key == "a" || e.key == "ArrowLeft") && !player.left){
       player.left = true;
-      if(!player.directions.length) gradual(0, 5);
       player.directions.push("left");
-      player.moving = true;
       player.right = false;
       remove(player.directions, "right");
-    } if((e.key == "s" || e.key == "ArrowDown") && !player.down){
+    } else if((e.key == "s" || e.key == "ArrowDown") && !player.down){
       player.down = true;
-      if(!player.directions.length) gradual(0, 5);
       player.directions.push("down");
-      player.moving = true;
       player.up = false;
       remove(player.directions, "up");
-    } if((e.key == "d" || e.key == "ArrowRight") && !player.right){
+    } else if((e.key == "d" || e.key == "ArrowRight") && !player.right){
       player.right = true;
-      if(!player.directions.length) gradual(0, 5);
       player.directions.push("right");
-      player.moving = true;
       player.left = false;
       remove(player.directions, "left");
     }
-    console.log(player.directions)
   }
 });
 
@@ -446,53 +511,16 @@ document.addEventListener("keyup", e => {
   
   if((e.key == "w" || e.key == "ArrowUp") && player.up){
     remove(player.directions, "up");
-    if(!player.directions.length){
-      player.slowing = true;
-      player.moving = false;
-      gradual(5, 0).then(() => {
-        player.up = false;
-        player.slowing = false;
-      });
-    } else {
-      player.up = false;
-    }
-  } if((e.key == "a" || e.key == "ArrowLeft") && player.left){
+    player.up = false;
+  } else if((e.key == "a" || e.key == "ArrowLeft") && player.left){
     remove(player.directions, "left");
-    if(!player.directions.length){
-      player.slowing = true;
-      player.moving = false;
-      gradual(5, 0).then(() => {
-        player.left = false;
-        player.slowing = false;
-      });
-    } else {
-      player.left = false;
-    }
-    player.moving = false;
-  } if((e.key == "s" || e.key == "ArrowDown") && player.down){
+    player.left = false;
+  } else if((e.key == "s" || e.key == "ArrowDown") && player.down){
     remove(player.directions, "down");
-    if(!player.directions.length){
-      player.slowing = true;
-      player.moving = false;
-      gradual(5, 0).then(() => {
-        player.down = false;
-        player.slowing = false;
-      });
-    } else {
-      player.down = false;
-    }
-  } if((e.key == "d" || e.key == "ArrowRight") && player.right){
+    player.down = false;
+  } else if((e.key == "d" || e.key == "ArrowRight") && player.right){
     remove(player.directions, "right");
-    if(!player.directions.length){
-      player.slowing = true;
-      player.moving = false;
-      gradual(5, 0).then(() => {
-        player.right = false;
-        player.slowing = false;
-      });
-    } else {
-      player.right = false;
-    }
+    player.right = false;
   }
 });
 
