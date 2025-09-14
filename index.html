@@ -435,7 +435,16 @@
         <input type="password" id="loginPassword" class="auth-input" placeholder="Password" autocomplete="current-password">
         <button id="loginButton" class="auth-button">LOGIN</button>
         <div class="auth-switch">
-          Don't have an account? <span id="showSignup" class="auth-link">Sign up</span>
+          Don't have an account? <span id="showSignup" class="auth-link">Sign up</span> or <span id="showGuest" class="auth-link">Play as Guest</span>
+        </div>
+      </div>
+      
+      <!-- Guest Form -->
+      <div id="guestForm">
+        <input type="text" id="guestUsername" class="auth-input" placeholder="Enter your username" maxlength="20">
+        <button id="guestButton" class="auth-button">PLAY AS GUEST</button>
+        <div class="auth-switch">
+          Want to save progress? <span id="showSignup" class="auth-link">Sign up</span> or <span id="showLogin" class="auth-link">Login</span>
         </div>
       </div>
       
@@ -446,7 +455,7 @@
         <input type="password" id="signupPassword" class="auth-input" placeholder="Password (min 6 characters)" autocomplete="new-password">
         <button id="signupButton" class="auth-button">SIGN UP</button>
         <div class="auth-switch">
-          Already have an account? <span id="showLogin" class="auth-link">Login</span>
+          Already have an account? <span id="showLogin" class="auth-link">Login</span> or <span id="showGuest" class="auth-link">Play as Guest</span>
         </div>
       </div>
     </div>

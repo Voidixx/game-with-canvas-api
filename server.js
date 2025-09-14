@@ -5,6 +5,8 @@ const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const cookieParser = require('cookie-parser');
 const { AuthService, authMiddleware, optionalAuthMiddleware } = require('./server/auth');
+const { db } = require('./server/database');
+const { users } = require('./shared/schema');
 const GameStatsService = require('./server/game-stats');
 
 const app = express();
@@ -22,7 +24,7 @@ const io = new Server(server, {
   }
 });
 
-// Socket.IO authentication middleware
+// Socket.IO authentication middleware (supports both authenticated and guest users)
 io.use(async (socket, next) => {
   try {
     const cookies = socket.request.headers.cookie;
@@ -41,19 +43,32 @@ io.use(async (socket, next) => {
       token = socket.request.headers.authorization.replace('Bearer ', '');
     }
     
-    if (!token) {
-      return next(new Error('Authentication required'));
+    // If we have a token, verify authenticated user
+    if (token) {
+      try {
+        const decoded = authService.verifyToken(token);
+        if (decoded) {
+          const user = await authService.getUserById(decoded.userId);
+          if (user) {
+            socket.user = user;
+            socket.isAuthenticated = true;
+            return next();
+          }
+        }
+      } catch (error) {
+        console.log('Token verification failed, allowing as guest');
+      }
     }
     
-    const user = await authService.getUserById(authService.verifyToken(token).userId);
-    if (!user) {
-      return next(new Error('User not found'));
-    }
-    
-    socket.user = user;
+    // Allow guest connections - they'll provide username via playerJoin event
+    socket.isAuthenticated = false;
+    socket.user = null;
     next();
   } catch (error) {
-    next(new Error('Authentication failed'));
+    // Allow connection even if authentication fails - guest mode
+    socket.isAuthenticated = false;
+    socket.user = null;
+    next();
   }
 });
 
@@ -156,6 +171,163 @@ app.get('/api/stats', authMiddleware, async (req, res) => {
   }
 });
 
+// Shop API endpoints
+const { items, user_items, weapons } = require('./shared/schema');
+const { sql, eq, and } = require('drizzle-orm');
+
+// Get player balance
+app.get('/api/player/balance', authMiddleware, async (req, res) => {
+  try {
+    res.json({ coins: req.user.coins });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get balance' });
+  }
+});
+
+// Get shop items
+app.get('/api/shop/items', async (req, res) => {
+  try {
+    const shopItems = await db.select()
+      .from(items)
+      .where(eq(items.is_available, true))
+      .orderBy(items.price);
+    res.json(shopItems);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get shop items' });
+  }
+});
+
+// Purchase item
+app.post('/api/shop/purchase', authMiddleware, async (req, res) => {
+  try {
+    const { itemId } = req.body;
+    
+    // Get item details
+    const [item] = await db.select().from(items).where(eq(items.id, itemId)).limit(1);
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    
+    // Check if user already owns this item
+    const [existingItem] = await db.select()
+      .from(user_items)
+      .where(and(eq(user_items.user_id, req.user.id), eq(user_items.item_id, itemId)))
+      .limit(1);
+    
+    if (existingItem) {
+      return res.status(400).json({ error: 'You already own this item' });
+    }
+    
+    // Check if user has enough coins
+    if (req.user.coins < item.price) {
+      return res.status(400).json({ error: 'Not enough coins' });
+    }
+    
+    // Deduct coins and add item to inventory
+    const newBalance = req.user.coins - item.price;
+    
+    await db.update(users).set({ 
+      coins: newBalance,
+      updated_at: new Date()
+    }).where(eq(users.id, req.user.id));
+    
+    await db.insert(user_items).values({
+      user_id: req.user.id,
+      item_id: itemId,
+      acquired_at: new Date()
+    });
+    
+    res.json({ success: true, newBalance });
+  } catch (error) {
+    console.error('Purchase error:', error);
+    res.status(500).json({ error: 'Purchase failed' });
+  }
+});
+
+// Get player inventory
+app.get('/api/player/inventory', authMiddleware, async (req, res) => {
+  try {
+    const inventory = await db.select({
+      item_id: user_items.item_id,
+      name: items.name,
+      description: items.description,
+      type: items.type,
+      category: items.category,
+      rarity: items.rarity,
+      image_url: items.image_url,
+      is_equipped: user_items.is_equipped,
+      acquired_at: user_items.acquired_at
+    })
+    .from(user_items)
+    .innerJoin(items, eq(user_items.item_id, items.id))
+    .where(eq(user_items.user_id, req.user.id));
+    
+    // Get equipped items
+    const equippedItems = {};
+    inventory.filter(item => item.is_equipped).forEach(item => {
+      equippedItems[item.category] = item.item_id;
+    });
+    
+    res.json({ items: inventory, equipped: equippedItems });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get inventory' });
+  }
+});
+
+// Equip item
+app.post('/api/player/equip', authMiddleware, async (req, res) => {
+  try {
+    const { itemId } = req.body;
+    
+    // Get item details
+    const [userItem] = await db.select({
+      item_id: user_items.item_id,
+      category: items.category
+    })
+    .from(user_items)
+    .innerJoin(items, eq(user_items.item_id, items.id))
+    .where(and(eq(user_items.user_id, req.user.id), eq(user_items.item_id, itemId)))
+    .limit(1);
+    
+    if (!userItem) {
+      return res.status(404).json({ error: 'Item not found in inventory' });
+    }
+    
+    // Unequip all items in the same category
+    await db.update(user_items)
+      .set({ is_equipped: false })
+      .where(and(
+        eq(user_items.user_id, req.user.id),
+        sql`item_id IN (SELECT id FROM items WHERE category = ${userItem.category})`
+      ));
+    
+    // Equip the selected item
+    await db.update(user_items)
+      .set({ is_equipped: true })
+      .where(and(eq(user_items.user_id, req.user.id), eq(user_items.item_id, itemId)));
+    
+    // Get updated equipped items
+    const inventory = await db.select({
+      item_id: user_items.item_id,
+      category: items.category,
+      is_equipped: user_items.is_equipped
+    })
+    .from(user_items)
+    .innerJoin(items, eq(user_items.item_id, items.id))
+    .where(and(eq(user_items.user_id, req.user.id), eq(user_items.is_equipped, true)));
+    
+    const equippedItems = {};
+    inventory.forEach(item => {
+      equippedItems[item.category] = item.item_id;
+    });
+    
+    res.json({ success: true, equipped: equippedItems });
+  } catch (error) {
+    console.error('Equip error:', error);
+    res.status(500).json({ error: 'Failed to equip item' });
+  }
+});
+
 // Serve index.html for root route
 app.get('/', optionalAuthMiddleware, (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
@@ -172,28 +344,57 @@ io.on('connection', (socket) => {
   console.log('Player connected:', socket.id);
 
   socket.on('playerJoin', async (playerData) => {
-    // Use authenticated user data from socket middleware
-    const user = socket.user;
-    const player = {
-      id: socket.id,
-      accountId: user.id, // Database user ID
-      name: user.username, // Use authenticated username
-      level: user.level,
-      coins: user.coins,
-      x: Math.random() * 1500 + 250, // Random spawn position
-      y: Math.random() * 1500 + 250,
-      radius: 50,
-      speed: 0,
-      health: 100,
-      score: 0,
-      alive: true,
-      lastShot: 0,
-      shootCooldown: 200,
-      invulnerableUntil: 0
-    };
+    let player;
+    
+    if (socket.isAuthenticated && socket.user) {
+      // Authenticated user
+      const user = socket.user;
+      player = {
+        id: socket.id,
+        accountId: user.id, // Database user ID
+        name: user.username, // Use authenticated username
+        level: user.level,
+        coins: user.coins,
+        x: Math.random() * 1500 + 250, // Random spawn position
+        y: Math.random() * 1500 + 250,
+        radius: 50,
+        speed: 0,
+        health: 100,
+        score: 0,
+        alive: true,
+        lastShot: 0,
+        shootCooldown: 200,
+        invulnerableUntil: 0,
+        isGuest: false
+      };
 
-    // Start game session tracking
-    await gameStats.startGameSession(socket.id, user.id);
+      // Start game session tracking for authenticated users
+      await gameStats.startGameSession(socket.id, user.id);
+    } else {
+      // Guest user
+      const guestName = playerData?.username || `Guest_${Math.floor(Math.random() * 9999)}`;
+      player = {
+        id: socket.id,
+        accountId: null, // No database ID for guests
+        name: guestName,
+        level: 1,
+        coins: 0,
+        x: Math.random() * 1500 + 250, // Random spawn position
+        y: Math.random() * 1500 + 250,
+        radius: 50,
+        speed: 0,
+        health: 100,
+        score: 0,
+        alive: true,
+        lastShot: 0,
+        shootCooldown: 200,
+        invulnerableUntil: 0,
+        isGuest: true
+      };
+
+      // No session tracking for guests
+      console.log(`Guest player joined: ${guestName}`);
+    }
     
     gameState.players.set(socket.id, player);
     
@@ -268,11 +469,15 @@ io.on('connection', (socket) => {
   socket.on('disconnect', async () => {
     console.log('Player disconnected:', socket.id);
     
-    // End game session and cleanup stats
-    const sessionResult = await gameStats.endGameSession(socket.id);
-    if (sessionResult) {
-      // Broadcast session results to player if they reconnect
-      console.log(`Session ended for ${socket.id}: ${sessionResult.coinsEarned} coins, ${sessionResult.experienceEarned} XP`);
+    // End game session and cleanup stats only for authenticated users
+    if (socket.isAuthenticated && socket.user) {
+      const sessionResult = await gameStats.endGameSession(socket.id);
+      if (sessionResult) {
+        // Broadcast session results to player if they reconnect
+        console.log(`Session ended for ${socket.id}: ${sessionResult.coinsEarned} coins, ${sessionResult.experienceEarned} XP`);
+      }
+    } else {
+      console.log(`Guest player disconnected: ${socket.id}`);
     }
     
     gameState.players.delete(socket.id);

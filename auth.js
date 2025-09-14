@@ -4,23 +4,27 @@ class GameAuth {
     this.user = null;
     this.token = null;
     this.isAuthenticated = false;
+    this.isGuest = false;
+    this.guestUsername = null;
     
     // DOM elements
     this.authContainer = null;
     this.loginForm = null;
     this.signupForm = null;
+    this.guestForm = null;
     this.userInfo = null;
     this.authError = null;
     
     this.initializeElements();
     this.bindEvents();
-    this.checkAuthStatus();
+    this.showMainMenu();
   }
   
   initializeElements() {
     this.authContainer = document.getElementById('authContainer');
     this.loginForm = document.getElementById('loginForm');
     this.signupForm = document.getElementById('signupForm');
+    this.guestForm = document.getElementById('guestForm');
     this.userInfo = document.getElementById('userInfo');
     this.authError = document.getElementById('authError');
     
@@ -35,6 +39,10 @@ class GameAuth {
     this.signupPassword = document.getElementById('signupPassword');
     this.signupButton = document.getElementById('signupButton');
     
+    // Guest elements
+    this.guestUsernameInput = document.getElementById('guestUsername');
+    this.guestButton = document.getElementById('guestButton');
+    
     // User info elements
     this.userDisplayName = document.getElementById('userDisplayName');
     this.userLevel = document.getElementById('userLevel');
@@ -45,41 +53,61 @@ class GameAuth {
     // Control elements
     this.showSignup = document.getElementById('showSignup');
     this.showLogin = document.getElementById('showLogin');
+    this.showGuest = document.getElementById('showGuest');
     this.logoutButton = document.getElementById('logoutButton');
   }
   
   bindEvents() {
     // Form switching
-    this.showSignup.addEventListener('click', () => this.switchToSignup());
-    this.showLogin.addEventListener('click', () => this.switchToLogin());
+    this.showSignup?.addEventListener('click', () => this.switchToSignup());
+    this.showLogin?.addEventListener('click', () => this.switchToLogin());
+    this.showGuest?.addEventListener('click', () => this.switchToGuest());
     
     // Authentication buttons
-    this.loginButton.addEventListener('click', () => this.login());
-    this.signupButton.addEventListener('click', () => this.signup());
-    this.logoutButton.addEventListener('click', () => this.logout());
+    this.loginButton?.addEventListener('click', () => this.login());
+    this.signupButton?.addEventListener('click', () => this.signup());
+    this.guestButton?.addEventListener('click', () => this.playAsGuest());
+    this.logoutButton?.addEventListener('click', () => this.logout());
     
     // Enter key handling
-    this.loginPassword.addEventListener('keypress', (e) => {
+    this.loginPassword?.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') this.login();
     });
     
-    this.signupPassword.addEventListener('keypress', (e) => {
+    this.signupPassword?.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') this.signup();
+    });
+    
+    this.guestUsernameInput?.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') this.playAsGuest();
     });
   }
   
   switchToSignup() {
-    this.loginForm.style.display = 'none';
+    this.hideAllForms();
     this.signupForm.style.display = 'block';
     this.hideError();
-    this.signupUsername.focus();
+    this.signupUsername?.focus();
   }
   
   switchToLogin() {
-    this.signupForm.style.display = 'none';
+    this.hideAllForms();
     this.loginForm.style.display = 'block';
     this.hideError();
-    this.loginUsername.focus();
+    this.loginUsername?.focus();
+  }
+  
+  switchToGuest() {
+    this.hideAllForms();
+    this.guestForm.style.display = 'block';
+    this.hideError();
+    this.guestUsernameInput?.focus();
+  }
+  
+  hideAllForms() {
+    this.loginForm.style.display = 'none';
+    this.signupForm.style.display = 'none';
+    if (this.guestForm) this.guestForm.style.display = 'none';
   }
   
   showError(message) {
@@ -100,14 +128,25 @@ class GameAuth {
       if (response.ok) {
         const data = await response.json();
         this.setUser(data.user);
+        this.hideAuthForm();
+        if (window.gameInitialized) {
+          window.initializeGame();
+        }
         return true;
       }
     } catch (error) {
       console.log('No valid session found');
     }
     
-    this.showAuthForm();
     return false;
+  }
+  
+  showMainMenu() {
+    this.checkAuthStatus().then(authenticated => {
+      if (!authenticated) {
+        this.showAuthForm();
+      }
+    });
   }
   
   async login() {
@@ -136,6 +175,7 @@ class GameAuth {
         this.setUser(data.user, data.token);
         this.hideAuthForm();
         // Initialize game with authenticated user
+        this.hideAuthForm();
         if (window.gameInitialized) {
           window.initializeGame();
         }
@@ -182,6 +222,7 @@ class GameAuth {
         this.setUser(data.user, data.token);
         this.hideAuthForm();
         // Initialize game with authenticated user
+        this.hideAuthForm();
         if (window.gameInitialized) {
           window.initializeGame();
         }
@@ -207,12 +248,18 @@ class GameAuth {
     }
     
     this.clearUser();
+    this.clearGuest();
     this.showAuthForm();
     
     // Disconnect from game if connected
     if (window.socket) {
       window.socket.disconnect();
     }
+    
+    // Force page reload to ensure complete logout
+    setTimeout(() => {
+      window.location.reload();
+    }, 500);
   }
   
   setUser(user, token = null) {
@@ -238,8 +285,58 @@ class GameAuth {
     this.isAuthenticated = false;
   }
   
+  clearGuest() {
+    this.isGuest = false;
+    this.guestUsername = null;
+  }
+  
+  playAsGuest() {
+    const username = this.guestUsernameInput?.value?.trim();
+    
+    if (!username || username.length < 3) {
+      this.showError('Guest username must be at least 3 characters long');
+      return;
+    }
+    
+    if (username.length > 20) {
+      this.showError('Username must be 20 characters or less');
+      return;
+    }
+    
+    // Set up guest user
+    this.isGuest = true;
+    this.guestUsername = username;
+    this.user = {
+      id: null,
+      username: username,
+      level: 1,
+      coins: 0,
+      experience: 0
+    };
+    
+    // Update display
+    this.userDisplayName.textContent = username + ' (Guest)';
+    this.userLevel.textContent = '1';
+    this.userCoins.textContent = '0';
+    this.userXP.textContent = '0';
+    this.userKD.textContent = '0.0';
+    
+    // Hide shop and inventory for guests
+    const shopButton = document.getElementById('shopButton');
+    const inventoryButton = document.getElementById('inventoryButton');
+    if (shopButton) shopButton.style.display = 'none';
+    if (inventoryButton) inventoryButton.style.display = 'none';
+    
+    this.hideAuthForm();
+    
+    // Initialize game
+    if (window.gameInitialized) {
+      window.initializeGame();
+    }
+  }
+  
   updateUserInfoDisplay() {
-    if (this.isAuthenticated && this.user) {
+    if ((this.isAuthenticated && this.user) || this.isGuest) {
       this.userInfo.style.display = 'block';
     } else {
       this.userInfo.style.display = 'none';
@@ -249,14 +346,15 @@ class GameAuth {
   showAuthForm() {
     this.authContainer.style.display = 'block';
     this.hideError();
-    // Focus on the username field
-    setTimeout(() => {
-      if (this.loginForm.style.display !== 'none') {
-        this.loginUsername.focus();
-      } else {
-        this.signupUsername.focus();
-      }
-    }, 100);
+    // Default to guest form
+    this.hideAllForms();
+    if (this.guestForm) {
+      this.guestForm.style.display = 'block';
+      setTimeout(() => this.guestUsernameInput?.focus(), 100);
+    } else {
+      this.loginForm.style.display = 'block';
+      setTimeout(() => this.loginUsername?.focus(), 100);
+    }
   }
   
   hideAuthForm() {
@@ -270,6 +368,14 @@ class GameAuth {
   
   getUser() {
     return this.user;
+  }
+  
+  isGuestUser() {
+    return this.isGuest;
+  }
+  
+  canAccessShop() {
+    return this.isAuthenticated && !this.isGuest;
   }
   
   updateUserStats(stats) {
