@@ -20,14 +20,14 @@ function drawLoadingScreen() {
   loadingAnimation += 0.1;
   
   // Title
-  c.font = "48px Arial";
+  c.font = `${getResponsiveFontSize(48)}px Arial`;
   c.fillStyle = "white";
   c.textAlign = "center";
-  c.fillText("LOADING GAME", canvas.width / 2, canvas.height / 2 - 100);
+  c.fillText("LOADING GAME", canvas.width / 2, canvas.height / 2 - getResponsiveSize(100));
   
   // Progress bar background
-  const progressBarWidth = 400;
-  const progressBarHeight = 20;
+  const progressBarWidth = getResponsiveSize(400);
+  const progressBarHeight = getResponsiveSize(20);
   const progressBarX = canvas.width / 2 - progressBarWidth / 2;
   const progressBarY = canvas.height / 2 - 10;
   
@@ -43,9 +43,9 @@ function drawLoadingScreen() {
   c.fillRect(progressBarX, progressBarY, progressFillWidth, progressBarHeight);
   
   // Progress percentage
-  c.font = "24px Arial";
+  c.font = `${getResponsiveFontSize(24)}px Arial`;
   c.fillStyle = "white";
-  c.fillText(Math.floor(loadingProgress) + "%", canvas.width / 2, canvas.height / 2 + 60);
+  c.fillText(Math.floor(loadingProgress) + "%", canvas.width / 2, canvas.height / 2 + getResponsiveSize(60));
   
   // Animated dots
   const dots = Math.floor(loadingAnimation) % 4;
@@ -53,8 +53,8 @@ function drawLoadingScreen() {
   for (let i = 0; i < dots; i++) {
     dotText += ".";
   }
-  c.font = "36px Arial";
-  c.fillText(dotText, canvas.width / 2, canvas.height / 2 + 100);
+  c.font = `${getResponsiveFontSize(36)}px Arial`;
+  c.fillText(dotText, canvas.width / 2, canvas.height / 2 + getResponsiveSize(100));
 }
 
 // Menu screen variables
@@ -84,12 +84,29 @@ function detectTouchDevice() {
 
 detectTouchDevice();
 
+// Mobile-responsive utilities
+function getResponsiveFontSize(baseFontSize) {
+  const minDimension = Math.min(canvas.width, canvas.height);
+  const scaleFactor = minDimension / 800; // Base scale for 800px
+  return Math.max(baseFontSize * scaleFactor, baseFontSize * 0.5); // Minimum 50% of base size
+}
+
+function getResponsiveSize(baseSize) {
+  const minDimension = Math.min(canvas.width, canvas.height);
+  const scaleFactor = minDimension / 800;
+  return Math.max(baseSize * scaleFactor, baseSize * 0.6);
+}
+
 // Update thumbstick position on resize
 function updateThumbstickPosition() {
-  thumbstick.baseX = 120;
-  thumbstick.baseY = canvas.height - 120;
+  const margin = getResponsiveSize(120);
+  thumbstick.baseX = margin;
+  thumbstick.baseY = canvas.height - margin;
   thumbstick.stickX = thumbstick.baseX;
   thumbstick.stickY = thumbstick.baseY;
+  thumbstick.baseRadius = getResponsiveSize(60);
+  thumbstick.stickRadius = getResponsiveSize(25);
+  thumbstick.maxDistance = getResponsiveSize(50);
 }
 
 function drawThumbstick() {
@@ -171,19 +188,23 @@ function drawMenuScreen() {
   }
   
   // Game title
-  c.font = "64px Arial";
+  c.font = `${getResponsiveFontSize(64)}px Arial`;
   c.fillStyle = "white";
   c.textAlign = "center";
-  c.fillText("ADVENTURE GAME", canvas.width / 2, canvas.height / 2 - 150);
+  c.fillText("ADVENTURE GAME", canvas.width / 2, canvas.height / 2 - getResponsiveSize(150));
   
   // Player name label
-  c.font = "32px Arial";
+  c.font = `${getResponsiveFontSize(32)}px Arial`;
   c.fillStyle = "#00ff88";
-  c.fillText("Enter your name:", canvas.width / 2, canvas.height / 2 - 60);
+  if (isTouchDevice) {
+    c.fillText("Your name: (default Player)", canvas.width / 2, canvas.height / 2 - getResponsiveSize(60));
+  } else {
+    c.fillText("Enter your name:", canvas.width / 2, canvas.height / 2 - getResponsiveSize(60));
+  }
   
   // Name input box
-  const inputBoxWidth = 400;
-  const inputBoxHeight = 50;
+  const inputBoxWidth = getResponsiveSize(400);
+  const inputBoxHeight = getResponsiveSize(50);
   const inputBoxX = canvas.width / 2 - inputBoxWidth / 2;
   const inputBoxY = canvas.height / 2 - 25;
   
@@ -194,24 +215,36 @@ function drawMenuScreen() {
   c.fillRect(inputBoxX, inputBoxY, inputBoxWidth, inputBoxHeight);
   
   // Player name text
-  c.font = "28px Arial";
+  c.font = `${getResponsiveFontSize(28)}px Arial`;
   c.fillStyle = "white";
   c.textAlign = "left";
   const nameText = nameInput || "Player";
-  c.fillText(nameText, inputBoxX + 15, inputBoxY + 32);
+  const textPadding = getResponsiveSize(15);
+  c.fillText(nameText, inputBoxX + textPadding, inputBoxY + inputBoxHeight * 0.65);
   
   // Blinking cursor
   if (Math.floor(cursorBlinkTime) % 2 === 0) {
     const textWidth = c.measureText(nameText).width;
-    c.fillRect(inputBoxX + 15 + textWidth + 5, inputBoxY + 10, 2, 30);
+    c.fillRect(inputBoxX + textPadding + textWidth + getResponsiveSize(5), 
+               inputBoxY + inputBoxHeight * 0.2, 
+               getResponsiveSize(2), 
+               inputBoxHeight * 0.6);
   }
   
   // Instructions
-  c.font = "24px Arial";
+  c.font = `${getResponsiveFontSize(24)}px Arial`;
   c.fillStyle = "#cccccc";
   c.textAlign = "center";
-  c.fillText("Type your name and press ENTER to start", canvas.width / 2, canvas.height / 2 + 80);
-  c.fillText("Use WASD or Arrow Keys to move", canvas.width / 2, canvas.height / 2 + 120);
+  const instruction1Y = canvas.height / 2 + getResponsiveSize(80);
+  const instruction2Y = canvas.height / 2 + getResponsiveSize(120);
+  
+  if (isTouchDevice) {
+    c.fillText("Touch anywhere to start playing", canvas.width / 2, instruction1Y);
+    c.fillText("Use the virtual joystick to move", canvas.width / 2, instruction2Y);
+  } else {
+    c.fillText("Type your name and press ENTER or click to start", canvas.width / 2, instruction1Y);
+    c.fillText("Use WASD or Arrow Keys to move", canvas.width / 2, instruction2Y);
+  }
 }
 
 // Initial loading screen
@@ -338,8 +371,13 @@ function animate(){
   
   // Display player name and thumbstick
   c.fillStyle = "white";
-  c.fillText("Player: " + playerName, 20, 50);
-  c.fillText("FPS: " + FPS, canvas.width - 200, 50);
+  c.font = `${getResponsiveFontSize(30)}px Arial`;
+  c.textAlign = "left";
+  const uiMargin = getResponsiveSize(20);
+  const uiHeight = getResponsiveSize(50);
+  c.fillText("Player: " + playerName, uiMargin, uiHeight);
+  c.textAlign = "right";
+  c.fillText("FPS: " + FPS, canvas.width - uiMargin, uiHeight);
   
   // Draw mobile thumbstick
   drawThumbstick();
@@ -350,6 +388,7 @@ function animate(){
 
 loadImages(loadingImages).then(() => {
   currentGameState = gameStates.MENU;
+  updateThumbstickPosition(); // Initialize responsive thumbstick sizing
   animateMenu();
 });
 
@@ -467,9 +506,23 @@ document.addEventListener("keyup", e => {
   }
 });
 
-// Touch event handlers for mobile thumbstick
+// Click handler for desktop menu
+canvas.addEventListener("click", e => {
+  if (currentGameState === gameStates.MENU && !isTouchDevice) {
+    startGame();
+  }
+});
+
+// Touch event handlers for mobile thumbstick and menu
 canvas.addEventListener("touchstart", e => {
   e.preventDefault();
+  
+  // Handle menu screen touch to start game
+  if (currentGameState === gameStates.MENU) {
+    startGame();
+    return;
+  }
+  
   if (currentGameState !== gameStates.PLAYING || !isTouchDevice) return;
   
   for (let touch of e.changedTouches) {
