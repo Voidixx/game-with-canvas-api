@@ -13,9 +13,6 @@ const io = new Server(server, {
   }
 });
 
-// Serve static files from the current directory
-app.use(express.static('.'));
-
 // Set cache control headers to prevent caching issues
 app.use((req, res, next) => {
     res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -23,6 +20,15 @@ app.use((req, res, next) => {
     res.set('Expires', '0');
     next();
 });
+
+// Serve static files from the current directory with proper cache headers
+app.use(express.static('.', {
+    setHeaders: (res) => {
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+    }
+}));
 
 // Serve index.html for root route
 app.get('/', (req, res) => {
