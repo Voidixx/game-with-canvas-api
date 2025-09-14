@@ -181,6 +181,7 @@ requiredFiles = [".replit", "replit.nix", ".config"]
 
 [agent]
 expertMode = true
+integrations = ["javascript_database:1.0.0"]
 
 [workflows]
 runButton = "Project"
@@ -209,10 +210,6 @@ outputType = "webview"
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 39433
-externalPort = 3001
 
 [deployment]
 deploymentTarget = "vm"
