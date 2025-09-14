@@ -51,7 +51,8 @@ io.on('connection', (socket) => {
       score: 0,
       alive: true,
       lastShot: 0,
-      shootCooldown: 200
+      shootCooldown: 200,
+      invulnerableUntil: 0
     };
     
     gameState.players.set(socket.id, player);
@@ -93,14 +94,28 @@ io.on('connection', (socket) => {
     const now = Date.now();
     if (player && player.alive && now - player.lastShot >= player.shootCooldown) {
       player.lastShot = now;
+      
+      // Server-authoritative shooting: use server player position and normalize direction
+      let dirX = shootData.dirX || 0;
+      let dirY = shootData.dirY || 0;
+      const dirLength = Math.sqrt(dirX * dirX + dirY * dirY);
+      
+      // Reject invalid directions
+      if (dirLength === 0 || isNaN(dirLength)) return;
+      
+      // Normalize direction to prevent speed hacks
+      dirX = dirX / dirLength;
+      dirY = dirY / dirLength;
+      
       const projectile = {
         id: uuidv4(),
         playerId: socket.id,
-        x: shootData.x,
-        y: shootData.y,
-        dirX: shootData.dirX,
-        dirY: shootData.dirY,
-        speed: 8
+        x: player.x, // Use server-side player position
+        y: player.y, // Use server-side player position
+        dirX: dirX,   // Normalized direction
+        dirY: dirY,   // Normalized direction
+        speed: 8,
+        createdAt: now
       };
       
       gameState.projectiles.push(projectile);
@@ -140,9 +155,12 @@ setInterval(() => {
     projectile.x += projectile.dirX * projectile.speed;
     projectile.y += projectile.dirY * projectile.speed;
     
-    // Check collision with all alive players (except the shooter)
+    // Check collision with all alive, non-invulnerable players (except the shooter)
     for (let [playerId, player] of gameState.players) {
-      if (playerId !== projectile.playerId && player.alive && checkProjectilePlayerCollision(projectile, player)) {
+      const currentTime = Date.now();
+      if (playerId !== projectile.playerId && player.alive && 
+          currentTime > player.invulnerableUntil && 
+          checkProjectilePlayerCollision(projectile, player)) {
         // Hit detected! Apply damage
         const damage = 25; // Base damage per hit
         player.health -= damage;
@@ -181,6 +199,7 @@ setInterval(() => {
             player.alive = true;
             player.x = Math.random() * 1500 + 250;
             player.y = Math.random() * 1500 + 250;
+            player.invulnerableUntil = Date.now() + 2000; // 2 seconds spawn protection
             
             // Broadcast respawn
             io.emit('playerRespawned', {
